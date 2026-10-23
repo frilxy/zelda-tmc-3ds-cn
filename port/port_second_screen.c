@@ -3003,9 +3003,11 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     {
         float ry = chipY + chipPad;
         float groupW = 16 * ik + groupGap + numberW;
-        /* Center the whole row, key group included, so the key cannot hang
-         * off the sidebar's left edge. */
-        float ixl = x + (w - (groupW + keyGroupW)) / 2 + keyGroupW;
+        /* The scale above is fixed by the key group on purpose, so the rupee
+         * never changes size; the row itself is centered per map -- with the
+         * key it centers the pair, without it the rupee gets the freed space
+         * and sits centered instead of pushed right. */
+        float ixl = isDungeon ? (x + (w - (groupW + keyGroupW)) / 2 + keyGroupW) : (x + (w - groupW) / 2);
         float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
         if (isDungeon) {
             float keyIx = ixl - keyGroupW;
