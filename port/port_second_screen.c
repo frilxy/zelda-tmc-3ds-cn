@@ -1623,16 +1623,16 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         int fl = topFloorNum - 2 - i;
         char label[10];
         if (fl >= 1) {
-            snprintf(label, sizeof(label), "[%dF]", fl);
+            snprintf(label, sizeof(label), "%dF", fl);
         } else {
-            snprintf(label, sizeof(label), "[B%d]", 1 - fl);
+            snprintf(label, sizeof(label), "B%d", 1 - fl);
         }
         /* Purple plaque with the map's own black rim, stacked flush. */
         DrawLabelPlate(s, px0, y0, px0 + pw, y0 + ph, SS_PLATE_FLOOR);
         int32_t ms = 1;
         /* Bold by offset: the in-game plaques are lettered heavier than the
          * body face ships, and Fusion Pixel has a single weight. */
-        int32_t tx = (int32_t)(px0 + pw / 2 + (isPlayers ? 5 * u : 0));
+        int32_t tx = (int32_t)(px0 + pw / 2);
         int32_t ty = Port_SecondScreenTheme_InkTopForCenter((int32_t)(y0 + ph / 2), ms, SS_FACE_BODY);
         MenuTextDrawFace(s, label, tx - MenuTextWidthFace(label, ms, SS_FACE_BODY) / 2, ty, ms, SS_TEXT_WHITE,
                          SS_FACE_BODY);
