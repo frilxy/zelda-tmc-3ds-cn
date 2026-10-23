@@ -2492,6 +2492,57 @@ static uint32_t TintBracketPixel(uint32_t c, uint32_t tint) {
     return (c & 0xFF000000u) | (tb << 16) | (tg << 8) | tr;
 }
 
+/* HUD-font number: the game's own 8x16 digit sprites, the same glyphs the
+ * rupee counter and the ammo badges use. Drawn here so panels that only have
+ * the theme header (the kinstone list) can letter counters in that style
+ * instead of the body face. Returns the left edge reached. */
+static void BlitThemeSprite(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                            const SecondScreenThemeSprite* s, int32_t x, int32_t y, int32_t scale) {
+    int32_t i, j, ex, ey;
+    if (s == NULL || s->px == NULL) {
+        return;
+    }
+    for (j = 0; j < s->h; j++) {
+        for (i = 0; i < s->w; i++) {
+            uint32_t c = s->px[(size_t)j * (size_t)s->w + i];
+            if ((c >> 24) == 0) {
+                continue;
+            }
+            for (ey = 0; ey < scale; ey++) {
+                int32_t py = y + j * scale + ey;
+                if (py < 0 || py >= bufH) {
+                    continue;
+                }
+                for (ex = 0; ex < scale; ex++) {
+                    int32_t px = x + i * scale + ex;
+                    if (px >= 0 && px < bufW) {
+                        pixels[(size_t)py * (size_t)stride + px] = c;
+                    }
+                }
+            }
+        }
+    }
+}
+
+int32_t Port_SecondScreenTheme_DrawHudNumber(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                             int32_t xRight, int32_t y, int32_t scale, uint32_t value,
+                                             int32_t minDigits, int yellow) {
+    int32_t x = xRight;
+    int32_t drawn = 0;
+    if (scale < 1) {
+        scale = 1;
+    }
+    do {
+        const SecondScreenThemeSprite* d =
+            Port_SecondScreenTheme_Get((yellow ? SST_DIGIT_YELLOW_0 : SST_DIGIT_WHITE_0) + (int32_t)(value % 10u));
+        x -= 8 * scale;
+        BlitThemeSprite(pixels, bufW, bufH, stride, d, x, y, scale);
+        value /= 10u;
+        drawn++;
+    } while (value != 0u || drawn < minDigits);
+    return x;
+}
+
 int Port_SecondScreenTheme_DrawBrackets(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                                         int32_t y, int32_t w, int32_t h, int32_t scale, uint32_t tint) {
     if (!sBuilt || pixels == NULL || sBtnBracket.px == NULL || w <= 0 || h <= 0) {
