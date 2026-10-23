@@ -723,6 +723,8 @@ enum { SS_PLATE_FLOOR = 0, SS_PLATE_TITLE = 1, SS_PLATE_DARK = 2 };
 #define COL_PLATE_TITLE_FILL RGB(33, 178, 247)
 #define COL_PLATE_TITLE_EDGE RGB(189, 243, 247)
 #define COL_PLATE_TITLE_OUTER RGB(49, 4, 90)
+/* The cursor brackets ship green; the map marks the previewed floor in red. */
+#define COL_SELECT_RED RGB(224, 24, 24)
 
 /* Fills a rect with its four corner pixels left untouched, so the plate reads
  * rounded against whatever is behind it (same idea as the tab plates). */
@@ -1645,7 +1647,7 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
             if (bscale < 1)
                 bscale = 1;
             Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, (int32_t)px0, (int32_t)y0, (int32_t)pw,
-                                                (int32_t)ph, bscale);
+                                                (int32_t)ph, bscale, COL_SELECT_RED);
         }
         if (isPlayers) {
             DrawMapMarker(s, (int32_t)(px0 + 13 * u), (int32_t)(y0 + ph / 2), (int32_t)(3 * u), gold);
