@@ -30,11 +30,14 @@
 
 ## Changelog
 
-- In-app updates now target frilxy/zelda-tmc-3ds-cn
-  instead of the upstream English repository.
-- Version tags use standard semver; v2.1c could
-  never be parsed by the updater.
-- Releases are stable by default, so
-  releases/latest resolves.
-- Assets are flat and updater-ready: CIA, 3DSX,
-  SHA256SUMS.txt and an FBI QR code.
+- In-app updates now target
+  frilxy/zelda-tmc-3ds-cn instead of the
+  upstream English repository.
+- Version tags use standard semver, so
+  the updater can parse them. v2.1c never
+  could.
+- Releases are stable by default and
+  releases/latest resolves again.
+- Assets are flat and ready for the
+  updater: CIA, 3DSX, SHA256SUMS and an
+  FBI QR code.

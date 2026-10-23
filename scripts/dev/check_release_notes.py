@@ -2,14 +2,16 @@
 """Fail the release build when CHANGELOG-cn.md cannot feed the on-device viewer.
 
 The 3DS updater starts its changelog at the "## Changelog" heading and renders
-through a font that only covers ASCII, dropping every other byte. A translation
-accidentally pasted into that section would ship as blank lines, so the release
-job refuses to publish in that case.
+it through a font that only covers ASCII, dropping every other byte. It also
+hard-wraps at 42 columns but only at spaces, so a line that is already longer
+than 42 columns wraps mid-phrase. Both rules are enforced here so the release
+job never ships a blank or ragged changelog page.
 """
 import pathlib
 import sys
 
 HEADING = "## Changelog"
+MAX_COLS = 42
 
 
 def main(path: str) -> int:
@@ -23,10 +25,13 @@ def main(path: str) -> int:
         print(f"{path}: non-ASCII characters in the on-device changelog: {bad}", file=sys.stderr)
         return 1
     widest = max((len(line) for line in section.splitlines()), default=0)
-    if widest > 84:
-        print(f"{path}: changelog line is {widest} characters; the viewer wraps at 84", file=sys.stderr)
+    if widest > MAX_COLS:
+        print(
+            f"{path}: changelog line is {widest} characters; the on-device viewer is {MAX_COLS} columns",
+            file=sys.stderr,
+        )
         return 1
-    print(f"{path}: on-device changelog OK")
+    print(f"{path}: on-device changelog OK (widest {widest}/{MAX_COLS} columns)")
     return 0
 
 
