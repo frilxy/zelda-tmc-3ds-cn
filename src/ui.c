@@ -13,9 +13,6 @@
 #include "vram.h"
 #include "structures.h"
 #include "port_rom.h"
-
-#include <stdarg.h>
-#include <stdio.h>
 #ifdef PC_PORT
 #include "port_charge_bar.h"
 #include "port_offset_remap.h"
@@ -896,8 +893,6 @@ u32 sub_0801CC80(UIElement* element) {
     return itemId;
 }
 
-static void HudLog(const char* fmt, ...);
-
 void ItemUIElement(UIElement* element) {
     u32 itemMaxNumber;
     u32 itemId;
@@ -912,17 +907,6 @@ void ItemUIElement(UIElement* element) {
     if (itemId == 0) {
         return;
     }
-#ifdef PC_PORT
-    {
-        static int sLoggedItemUI;
-        if (!sLoggedItemUI) {
-            sLoggedItemUI = 1;
-            HudLog("[HUD-ITEM] used=%u type=%u type2=%u buttonId=%u itemId=%u sprite=%u\n", (unsigned)element->used,
-                   (unsigned)element->type, (unsigned)element->type2, (unsigned)element->buttonElementId,
-                   (unsigned)itemId, (unsigned)gUIElementDefinitions[element->type].spriteIndex);
-        }
-    }
-#endif
 
     if (element->unk_8 != itemId) {
 #ifdef PC_PORT
@@ -986,50 +970,9 @@ void ItemUIElement(UIElement* element) {
     }
 }
 
-/* tmc3ds.log only receives what Platform3DS_Debug() is handed; a plain
- * fprintf(stderr, ...) from the engine never reaches the file on device, which
- * is why earlier HUD diagnostics came back empty. */
-static void HudLog(const char* fmt, ...) {
-    char buffer[192];
-    va_list args;
-    va_start(args, fmt);
-    vsnprintf(buffer, sizeof(buffer), fmt, args);
-    va_end(args);
-#if defined(TMC_3DS)
-    {
-        extern void Platform3DS_Debug(const char* message);
-        Platform3DS_Debug(buffer);
-    }
-#else
-    fprintf(stderr, "%s", buffer);
-#endif
-}
-
 void TextUIElement(UIElement* element) {
     UIElement* buttonUIElement;
     u32 frameIndex;
-
-#ifdef PC_PORT
-    /* One-shot, unconditional: the R hint paints a shield/boomerang instead of
-     * the action label. Earlier logging sat behind `frameIndex != 0`, and the
-     * captured logs never contained it, so either this function is not the one
-     * painting the icon or it always runs with a zero frame. Recording on the
-     * first call settles which. */
-    {
-        /* Log the first few calls, not just the first: the earliest one can run
-         * before Port_LoadRom has filled gUnk_080C9044, and a single sample
-         * cannot tell "never loaded" apart from "sampled too early". */
-        static int sLoggedTextUI;
-        if (sLoggedTextUI < 4) {
-            ++sLoggedTextUI;
-            HudLog("[HUD-TXT#%d] used=%u type=%u type2=%u buttonId=%u buttonText=%u altText=%u lang=%u base=%u\n",
-                   sLoggedTextUI, (unsigned)element->used, (unsigned)element->type, (unsigned)element->type2,
-                   (unsigned)element->buttonElementId, (unsigned)gHUD.buttonText[element->buttonElementId],
-                   (unsigned)gHUD.buttonText[2], (unsigned)gSaveHeader->language,
-                   (unsigned)gUnk_080C9044[gSaveHeader->language]);
-        }
-    }
-#endif
 
     if (element->type2 == 9) {
         frameIndex = gHUD.rActionPlayerState;
@@ -1050,24 +993,6 @@ void TextUIElement(UIElement* element) {
     }
     frameIndex = gHUD.buttonText[element->buttonElementId];
     element->unk_0_1 = 0;
-#ifdef PC_PORT
-    /* The label art sits at `value + labelBase`, and UIElement.frameIndex is a
-     * u8 while labelBase is 130 -- so any value above 125 wraps modulo 256 and
-     * indexes back into the item icons (frame 12 = Magic Boomerang, 14 = Mirror
-     * Shield, which is the bug this guards). The offset is NOT limited to the
-     * ActionRButton range: the file-select layout uses 0xF for its R hint, and
-     * that resolves to frame 145, past the action labels. So the only real
-     * constraint is the u8 overflow. */
-    if (frameIndex > (u32)(255u - gUnk_080C9044[gSaveHeader->language])) {
-        static int sLoggedBadTextFrame;
-        if (!sLoggedBadTextFrame) {
-            sLoggedBadTextFrame = 1;
-            HudLog("[HUD-TXT] out-of-range label frame %u (button %u) -> suppressed\n", (unsigned)frameIndex,
-                   (unsigned)element->buttonElementId);
-        }
-        frameIndex = 0;
-    }
-#endif
     if (frameIndex != 0) {
         frameIndex += gUnk_080C9044[gSaveHeader->language];
         sub_0801CAFC(element, frameIndex);
