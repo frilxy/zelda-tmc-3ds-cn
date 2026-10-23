@@ -2494,12 +2494,13 @@ void Port_SecondScreen_TestUnavailableNoticeLayout(int32_t width, int32_t height
 }
 #endif
 
-#ifdef TMC_3DS
+#ifdef PORT_SECOND_SCREEN_TEST
 void Port_SecondScreen_TestRandomizerConfirmationLayout(int32_t width, int32_t height,
                                                         PortSecondScreenTestLoadStateLayout* out) {
     LoadStateConfirmationLayout layout;
     float u;
-    if (out == NULL || width <= 0 || height <= 0) return;
+    if (out == NULL || width <= 0 || height <= 0)
+        return;
     u = (width < height ? width : height) / 720.0f;
     layout = ComputeLoadStateConfirmationLayout(width, height, u);
     out->titleCenterY = (int32_t)layout.titleY;
@@ -2510,7 +2511,9 @@ void Port_SecondScreen_TestRandomizerConfirmationLayout(int32_t width, int32_t h
     out->buttonTop = (int32_t)layout.buttonTop;
     out->buttonBottom = (int32_t)layout.buttonBottom;
 }
+#endif
 
+#ifdef TMC_3DS
 static void PaintLoadStateConfirmation(const SSurf* s, TargetList* tl, float u, int32_t ts) {
     const LoadStateConfirmationLayout layout = ComputeLoadStateConfirmationLayout(s->w, s->h, u);
     tl->n = 0;
