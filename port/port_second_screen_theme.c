@@ -1955,6 +1955,8 @@ static int32_t TmcCnWidthFace(const char* str, int32_t scale, int face);
 static int32_t TmcDrawMixedText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x, int32_t y,
                                 int32_t scale, int style, const char* str, int face);
 
+enum { TMC_FACE_BODY = 0, TMC_FACE_LARGE = 1 };
+
 static const u8* GlyphData(char c) {
     u8 code = (u8)c;
     if (code < 0x20) {
@@ -2046,7 +2048,6 @@ int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t 
  *   1 = large (Unifont 16px bold)  -- panel titles and tab labels
  * A cell is 16x16 at 2bpp: 0 transparent, 1 outline, 2 body. The outline is
  * part of the bitmap, so nothing is dilated at runtime. */
-enum { TMC_FACE_BODY = 0, TMC_FACE_LARGE = 1 };
 
 static const uint32_t* TmcFaceCells(int face) {
     return face == TMC_FACE_LARGE ? kTmcCnLargeCell : kTmcCnCell;
