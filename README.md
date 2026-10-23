@@ -156,7 +156,7 @@ Every GitHub release includes:
 
 Latest release:
 
-https://github.com/EstebanPdN/zelda-tmc-3ds/releases/latest
+https://github.com/frilxy/zelda-tmc-3ds-cn/releases/latest
 
 ## Building
 

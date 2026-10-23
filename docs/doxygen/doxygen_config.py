@@ -1,6 +1,6 @@
 # Configuration file for https://mcss.mosra.cz/documentation/doxygen/
 DOXYFILE = 'docs/doxygen/Doxyfile'
-MAIN_PROJECT_URL = 'https://github.com/EstebanPdN/zelda-tmc-3ds'
+MAIN_PROJECT_URL = 'https://github.com/frilxy/zelda-tmc-3ds-cn'
 SHOW_UNDOCUMENTED = True
 SEARCH_RESULT_ID_BYTES = 4
 SEARCH_FILE_OFFSET_BYTES = 4
