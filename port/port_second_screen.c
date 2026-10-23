@@ -2997,28 +2997,32 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         keyGroupW = 16 * ik + groupGap + 2 * 8 * ck + groupGap;
     }
     float numberW = 3 * 8 * ck;
+    float keyNumberW = 2 * 8 * ck;
     float rowH = 16 * (ik > ck ? ik : ck);
-    float chipH = rowH + 2 * chipPad;
+    /* A dungeon stacks the small-key row above the rupee row and centers each
+     * one on its own; above ground only the rupee row is drawn, centered. */
+    int chipRows = isDungeon ? 2 : 1;
+    float chipH = chipRows * rowH + (chipRows - 1) * 6 * u + 2 * chipPad;
     float chipY = y + h - chipH - 30 * u;
     {
         float ry = chipY + chipPad;
-        float groupW = 16 * ik + groupGap + numberW;
-        /* The scale above is fixed by the key group on purpose, so the rupee
-         * never changes size; the row itself is centered per map -- with the
-         * key it centers the pair, without it the rupee gets the freed space
-         * and sits centered instead of pushed right. */
-        float ixl = isDungeon ? (x + (w - (groupW + keyGroupW)) / 2 + keyGroupW) : (x + (w - groupW) / 2);
         float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
         if (isDungeon) {
-            float keyIx = ixl - keyGroupW;
+            float keyW = 16 * ik + groupGap + keyNumberW;
+            float keyIx = x + (w - keyW) / 2;
             BlitSprite(s, Port_SecondScreenTheme_Get(SST_KEY), (int32_t)keyIx, (int32_t)ry, ik);
-            DrawHudNumber(s, (int32_t)(keyIx + 16 * ik + groupGap + 2 * 8 * ck), (int32_t)(ry + dy), ck,
+            DrawHudNumber(s, (int32_t)(keyIx + 16 * ik + groupGap + keyNumberW), (int32_t)(ry + dy), ck,
                           snap->dungeonKeys, 2, 0);
+            ry += rowH + 6 * u;
         }
-        BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl, (int32_t)ry,
-                   ik);
-        DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,
-                      snap->walletMax != 0 && snap->rupees >= snap->walletMax);
+        {
+            float groupW = 16 * ik + groupGap + numberW;
+            float ixl = x + (w - groupW) / 2;
+            BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl,
+                       (int32_t)ry, ik);
+            DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,
+                          snap->walletMax != 0 && snap->rupees >= snap->walletMax);
+        }
     }
 
     /* Equip rings, centered between the vitals and the chip: A above B.

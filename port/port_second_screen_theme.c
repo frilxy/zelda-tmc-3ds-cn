@@ -2261,8 +2261,18 @@ static int32_t TmcDrawMixedTextPal(uint32_t* pixels, int32_t bufW, int32_t bufH,
             continue;
         if (hasGlyph)
             x += TMC_CN_LETTER_SPACING * scale;
-        TmcDrawCnGlyphFace(pixels, bufW, bufH, stride, x, y, scale, cell, color, outlineColor, drawOutline, face);
-        x += (int32_t)TmcFaceAdvances(face)[cell] * scale;
+        /* The glyph art is centered inside its 16px cell, but the pen only
+         * advances by the cell's own advance -- blitting at x left every
+         * character sitting (16-adv)/2 px right of its slot, and the drift
+         * showed up as a left gap in centered labels like "[3F]". Shift the
+         * blit back by that half-difference so ink centers on the pen. */
+        {
+            int32_t adv = (int32_t)TmcFaceAdvances(face)[cell];
+            int32_t back = (TMC_CN_PX - adv) / 2;
+            TmcDrawCnGlyphFace(pixels, bufW, bufH, stride, x - back * scale, y, scale, cell, color, outlineColor,
+                               drawOutline, face);
+            x += adv * scale;
+        }
         hasGlyph = 1;
     }
     return x - start;
