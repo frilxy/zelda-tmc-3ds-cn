@@ -2988,30 +2988,31 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     float chipPad = 2 * u;
     float groupGap = 6 * u;
     float innerW = w - 2 * chipPad;
-    float keyGroupW = isDungeon ? (16 * ik + groupGap + 2 * 8 * ck + groupGap) : 0.0f;
-    while (ck > 1 && keyGroupW + 16 * ik + groupGap + 3 * 8 * ck > innerW) {
+    /* Two rows are always reserved: small keys above the rupee count when
+     * underground, empty above ground. Reserving both regardless is what keeps
+     * the rupee the same size and in the same place in and out of a dungeon --
+     * a layout that grew a second row only in dungeons shrank the equip rings
+     * the moment you walked through a door. */
+    int chipRows = 2;
+    while (ck > 1 && 16 * ik + groupGap + 3 * 8 * ck > innerW)
         --ck;
-        keyGroupW = isDungeon ? (16 * ik + groupGap + 2 * 8 * ck + groupGap) : 0.0f;
-    }
-    while (ik > 1 && keyGroupW + 16 * ik + groupGap + 3 * 8 * ck > innerW) {
+    while (ik > 1 && 16 * ik + groupGap + 3 * 8 * ck > innerW)
         --ik;
-        keyGroupW = isDungeon ? (16 * ik + groupGap + 2 * 8 * ck + groupGap) : 0.0f;
-    }
     float numberW = 3 * 8 * ck;
     float rowH = 16 * (ik > ck ? ik : ck);
-    float chipH = rowH + 2 * chipPad;
+    float chipH = chipRows * rowH + (chipRows - 1) * 6 * u + 2 * chipPad;
     float chipY = y + h - chipH - 30 * u;
     {
-        float ry = chipY + chipPad;
-        float groupW = keyGroupW + 16 * ik + groupGap + numberW;
+        float groupW = 16 * ik + groupGap + numberW;
         float ixl = x + (w - groupW) / 2;
         float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
+        float ry = chipY + chipPad;
         if (isDungeon) {
             BlitSprite(s, Port_SecondScreenTheme_Get(SST_KEY), (int32_t)ixl, (int32_t)ry, ik);
-            DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + 2 * 8 * ck), (int32_t)(ry + dy), ck,
-                          snap->dungeonKeys, 2, 0);
-            ixl += 16 * ik + groupGap + 2 * 8 * ck + groupGap;
+            DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->dungeonKeys,
+                          2, 0);
         }
+        ry += rowH + 6 * u;
         BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl, (int32_t)ry,
                    ik);
         DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,

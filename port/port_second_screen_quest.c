@@ -724,7 +724,7 @@ static int32_t LaneRanks(const int32_t* v, int n, int32_t* outLane, int32_t* out
  * diamond does not — the game spaces those four 24px apart across and only
  * 13px down, which is what makes it a diamond rather than a plus. */
 #define QCELL 8 /* sub-cell units: one full-size well is QCELL of them */
-#define DIAMOND_WELL                                            \
+#define DIAMOND_WELL                                              \
     6 /* a diamond's wells, in those units — the game draws the \
        * elements smaller than the collection's plates too */
 typedef struct {
@@ -818,10 +818,13 @@ static void DrawGroup(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stri
         if (content.count >= 0 && !content.skill) {
             char buf[8];
             int32_t tw;
+            /* HUD-digit sprites, the same glyphs the ammo badges use -- the
+             * body face read thin beside them (shell count was the last one
+             * still lettered that way). */
             FormatCount(buf, sizeof(buf), content.count);
-            tw = Port_SecondScreenTheme_TextWidth(buf, scale);
-            Port_SecondScreenTheme_DrawText(pixels, bufW, bufH, stride, cx + (side - tw) / 2, cy + side - 14 * scale,
-                                            scale, SS_TEXT_INK, buf);
+            tw = (int32_t)strlen(buf) * 8 * scale;
+            Port_SecondScreenTheme_DrawHudNumber(pixels, bufW, bufH, stride, cx + (side + tw) / 2,
+                                                 cy + side - 14 * scale, scale, (uint32_t)content.count, 1, 0);
         }
     }
 }
