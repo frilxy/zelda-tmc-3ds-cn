@@ -10,6 +10,22 @@
 
 ---
 
+## v2.2.1
+
+### 变更
+
+- 移除实验性「完全视野」（Full View）。New 3DS 上的宽屏 + 完美像素组合不再
+  切换到 400x240 户外视野或 200x120 室内视野，统一使用常规宽屏呈现。
+- 宽屏、摄像机与滚动逻辑从 `port_linked_stubs.c` 拆到独立模块
+  `port/port_widescreen.c`，行为不变，便于维护。
+- 保留本项目自有的对话框居中修正（`Port_Message_WindowRect`）与随机化引擎。
+
+### 说明
+
+- 本节对应上游 v2.2 的两项功能性改动中的一项。上游 v2.2 另有存档修复，
+  但其判据函数 `HasUnsupportedProfile` 在本仓不存在（本项目随机化使用独立
+  存档文件名，不走 `.randomizer` 元数据判据），故不适用。
+
 ## v2.1.1
 
 ### 修复
@@ -30,6 +46,10 @@
 
 ## Changelog
 
+- Removed the experimental Full View mode
+  from the Wide + Pixel Perfect combo.
+- Widescreen camera and scroll logic now
+  live in port/port_widescreen.c.
 - In-app updates now target
   frilxy/zelda-tmc-3ds-cn instead of the
   upstream English repository.

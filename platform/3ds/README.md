@@ -48,10 +48,6 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
   start with Bilinear and Stretch; valid saved choices are restored on later
   launches.
-- Experimental Full View: on New 3DS, selecting Wide + Pixel Perfect renders
-  compatible outdoor rooms at 400x240 and supported interiors at a centered
-  200x120 logical view scaled exactly 2x. Dialogues, transitions and unsupported
-  effects fall back safely to the established presentation.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
 - Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
 - Performance profile: selected automatically from the detected console model.

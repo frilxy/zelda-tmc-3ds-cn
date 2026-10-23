@@ -86,9 +86,6 @@ void UpdateScroll(void) {
         Scroll0, Scroll1, Scroll2, NULL, Scroll4, Scroll5,
     };
 
-#ifdef PC_PORT
-    Port_Widescreen_PrepareGameplayCamera();
-#endif
     gRoomControls.scroll_flags &= 0xfb;
     gUnk_0811E768[gRoomControls.scrollAction](&gRoomControls);
 }

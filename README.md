@@ -31,9 +31,6 @@ https://discord.gg/SMW49UMkw
   shows only its stone frame until Link receives it.
 * New 3DS enhancements including 804 MHz mode, L2 cache, multi-core rendering, and optional 2x–5x turbo using the C-Stick.
 * Three display styles: Blur, Bilinear, and Pixel Perfect.
-* On New Nintendo 3DS, the existing Wide + Pixel Perfect combination enables
-  experimental Full View: compatible outdoor rooms render at 400x240, while
-  supported interiors use a centered 200x120 view scaled exactly 2x.
 * In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
 * Built-in Project Picori Randomizer support with separate normal and randomized save data.
 * Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
