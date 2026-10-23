@@ -135,10 +135,20 @@ jobs:
 
           (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" "tmc-3ds-v${VERSION}.3dsx" > SHA256SUMS.txt)
 
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq qrencode
-          qrencode -o "dist/QR-${TAG}-github.png" -s 6 -m 2 \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
+          # The QR is a convenience, never a gate: apt once hung here for
+          # 15+ minutes and blocked a release that had already compiled.
+          if command -v qrencode >/dev/null 2>&1 ||
+             { timeout 90 sudo apt-get update -qq &&
+               timeout 120 sudo apt-get install -y -qq qrencode; }; then
+            if command -v qrencode >/dev/null 2>&1; then
+              qrencode -o "dist/QR-${TAG}-github.png" -s 6 -m 2 \
+                "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
+            else
+              echo "qrencode unavailable; skipping the QR asset"
+            fi
+          else
+            echo "package install timed out; skipping the QR asset"
+          fi
 
       - name: Write release notes
         run: |
