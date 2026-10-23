@@ -45,6 +45,7 @@ tools/binutils
 !tools/extract_include_enum.py
 !tools/generate_sounds_embed.py
 !scripts/dev/check_release_notes.py
+!scripts/dev/gen_cn_font.py
 *.pl
 
 # graphics
