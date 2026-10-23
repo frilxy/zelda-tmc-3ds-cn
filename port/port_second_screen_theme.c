@@ -315,6 +315,7 @@ static uint32_t sBtnFill, sBtnInk, sBtnHi;
 static int32_t sBtnCleanCol, sBtnCleanRow; /* plate columns/rows free of lettering */
 static uint32_t sBtnPal[16];
 static SecondScreenThemeSprite sBtnBracket;
+static uint32_t sBracketTint;
 static int sBtnOk = 0;
 
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
@@ -1950,6 +1951,10 @@ static void GlyphMetrics(const u8* glyph, int32_t* outStart, int32_t* outWidth) 
 /* The USA/EU script is plain ASCII in bank 0 (charmap.txt); anything the
  * panel never uses falls back to '?' so a stray string cannot index out
  * of the 256-glyph bank. */
+static int32_t TmcCnWidthFace(const char* str, int32_t scale, int face);
+static int32_t TmcDrawMixedText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x, int32_t y,
+                                int32_t scale, int style, const char* str, int face);
+
 static const u8* GlyphData(char c) {
     u8 code = (u8)c;
     if (code < 0x20) {
@@ -1960,8 +1965,11 @@ static const u8* GlyphData(char c) {
 
 int32_t Port_SecondScreenTheme_TextWidth(const char* str, int32_t scale) {
     int32_t w = 0, gs, gw;
-    if (!sBuilt || !sFontOk || str == NULL) {
+    if (!sBuilt || str == NULL) {
         return 0;
+    }
+    if (!sFontOk) {
+        return TmcCnWidthFace(str, scale, TMC_FACE_BODY);
     }
     for (; *str; str++) {
         GlyphMetrics(GlyphData(*str), &gs, &gw);
@@ -1975,8 +1983,15 @@ int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t 
     const u8* lutE;
     const u8* lutO;
     int32_t startX = x;
-    if (!sBuilt || !sFontOk || str == NULL) {
+    if (!sBuilt || str == NULL) {
         return 0;
+    }
+    /* The ROM's ASCII bank is only usable on USA/EU (the JP bank 0 is its own
+     * script), so `sFontOk` is false on a JP build and every digit used to
+     * vanish -- shell counts, kinstone counts. The CN atlas already carries
+     * ASCII 0x20..0x7E, so fall back to it instead of drawing nothing. */
+    if (!sFontOk) {
+        return TmcDrawMixedText(pixels, bufW, bufH, stride, x, y, scale, style, str, TMC_FACE_BODY);
     }
     if (style < 0 || style >= SS_TEXT_STYLE_COUNT) {
         style = SS_TEXT_INK;
@@ -2332,6 +2347,8 @@ static void PlatePatch(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t str
 
 /* Stamps one quadrant of the selection-bracket composite (its art only
  * occupies the composite's corners) at a destination corner. */
+static uint32_t TintBracketPixel(uint32_t c, uint32_t tint);
+
 static void BracketCorner(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int right, int bottom,
                           int32_t dx, int32_t dy, int32_t scale) {
     int32_t cw = sBtnBracket.w / 2, ch = sBtnBracket.h / 2;
@@ -2343,6 +2360,9 @@ static void BracketCorner(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t 
             uint32_t c = sBtnBracket.px[(size_t)(sy + j) * (size_t)sBtnBracket.w + sx + i];
             if ((c >> 24) == 0) {
                 continue;
+            }
+            if (sBracketTint != 0) {
+                c = TintBracketPixel(c, sBracketTint);
             }
             for (ey = 0; ey < scale; ey++) {
                 int32_t py = dy + j * scale + ey;
@@ -2455,14 +2475,31 @@ int Port_SecondScreenTheme_DrawMenuButton(uint32_t* pixels, int32_t bufW, int32_
 /* Selection brackets on their own, without the plate underneath: the same
  * red-and-white cursor corners the menu draws on a pressed plate, usable to
  * mark a rect that is painted by another pass (the map's floor plaques). */
+/* Recolours the green cursor brackets: the art is a green bevel with a near
+ * white highlight, so keep anything that is almost white untouched and push
+ * the rest onto a red ramp. */
+static uint32_t TintBracketPixel(uint32_t c, uint32_t tint) {
+    uint32_t r = c & 0xFFu, g = (c >> 8) & 0xFFu, b = (c >> 16) & 0xFFu;
+    uint32_t lum, tr, tg, tb;
+    if (r >= 200u && g >= 200u && b >= 200u) {
+        return c;
+    }
+    lum = (r * 77u + g * 151u + b * 28u) >> 8;
+    tr = (tint & 0xFFu) * lum / 255u;
+    tg = ((tint >> 8) & 0xFFu) * lum / 255u;
+    tb = ((tint >> 16) & 0xFFu) * lum / 255u;
+    return (c & 0xFF000000u) | (tb << 16) | (tg << 8) | tr;
+}
+
 int Port_SecondScreenTheme_DrawBrackets(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
-                                        int32_t y, int32_t w, int32_t h, int32_t scale) {
+                                        int32_t y, int32_t w, int32_t h, int32_t scale, uint32_t tint) {
     if (!sBuilt || pixels == NULL || sBtnBracket.px == NULL || w <= 0 || h <= 0) {
         return 0;
     }
     if (scale < 1) {
         scale = 1;
     }
+    sBracketTint = tint;
     {
         int32_t bw = (sBtnBracket.w / 2) * scale, bh = (sBtnBracket.h / 2) * scale;
         BracketCorner(pixels, bufW, bufH, stride, 0, 0, x, y, scale);
