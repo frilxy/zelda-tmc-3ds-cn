@@ -1623,9 +1623,9 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         int fl = topFloorNum - 2 - i;
         char label[10];
         if (fl >= 1) {
-            snprintf(label, sizeof(label), "%dF", fl);
+            snprintf(label, sizeof(label), " %dF", fl);
         } else {
-            snprintf(label, sizeof(label), "B%d", 1 - fl);
+            snprintf(label, sizeof(label), " B%d", 1 - fl);
         }
         /* Purple plaque with the map's own black rim, stacked flush. */
         DrawLabelPlate(s, px0, y0, px0 + pw, y0 + ph, SS_PLATE_FLOOR);
