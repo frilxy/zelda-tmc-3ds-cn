@@ -1623,16 +1623,16 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         int fl = topFloorNum - 2 - i;
         char label[10];
         if (fl >= 1) {
-            snprintf(label, sizeof(label), "[%dF]", fl);
+            snprintf(label, sizeof(label), "%dF", fl);
         } else {
-            snprintf(label, sizeof(label), "[B%d]", 1 - fl);
+            snprintf(label, sizeof(label), "B%d", 1 - fl);
         }
         /* Purple plaque with the map's own black rim, stacked flush. */
         DrawLabelPlate(s, px0, y0, px0 + pw, y0 + ph, SS_PLATE_FLOOR);
         int32_t ms = 1;
         /* Bold by offset: the in-game plaques are lettered heavier than the
          * body face ships, and Fusion Pixel has a single weight. */
-        int32_t tx = (int32_t)(px0 + pw / 2 + (isPlayers ? 5 * u : 0));
+        int32_t tx = (int32_t)(px0 + pw / 2);
         int32_t ty = Port_SecondScreenTheme_InkTopForCenter((int32_t)(y0 + ph / 2), ms, SS_FACE_BODY);
         MenuTextDrawFace(s, label, tx - MenuTextWidthFace(label, ms, SS_FACE_BODY) / 2, ty, ms, SS_TEXT_WHITE,
                          SS_FACE_BODY);
@@ -2997,28 +2997,32 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         keyGroupW = 16 * ik + groupGap + 2 * 8 * ck + groupGap;
     }
     float numberW = 3 * 8 * ck;
+    float keyNumberW = 2 * 8 * ck;
     float rowH = 16 * (ik > ck ? ik : ck);
-    float chipH = rowH + 2 * chipPad;
+    /* A dungeon stacks the small-key row above the rupee row and centers each
+     * one on its own; above ground only the rupee row is drawn, centered. */
+    int chipRows = isDungeon ? 2 : 1;
+    float chipH = chipRows * rowH + (chipRows - 1) * 6 * u + 2 * chipPad;
     float chipY = y + h - chipH - 30 * u;
     {
         float ry = chipY + chipPad;
-        float groupW = 16 * ik + groupGap + numberW;
-        /* The scale above is fixed by the key group on purpose, so the rupee
-         * never changes size; the row itself is centered per map -- with the
-         * key it centers the pair, without it the rupee gets the freed space
-         * and sits centered instead of pushed right. */
-        float ixl = isDungeon ? (x + (w - (groupW + keyGroupW)) / 2 + keyGroupW) : (x + (w - groupW) / 2);
         float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
         if (isDungeon) {
-            float keyIx = ixl - keyGroupW;
+            float keyW = 16 * ik + groupGap + keyNumberW;
+            float keyIx = x + (w - keyW) / 2;
             BlitSprite(s, Port_SecondScreenTheme_Get(SST_KEY), (int32_t)keyIx, (int32_t)ry, ik);
-            DrawHudNumber(s, (int32_t)(keyIx + 16 * ik + groupGap + 2 * 8 * ck), (int32_t)(ry + dy), ck,
+            DrawHudNumber(s, (int32_t)(keyIx + 16 * ik + groupGap + keyNumberW), (int32_t)(ry + dy), ck,
                           snap->dungeonKeys, 2, 0);
+            ry += rowH + 6 * u;
         }
-        BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl, (int32_t)ry,
-                   ik);
-        DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,
-                      snap->walletMax != 0 && snap->rupees >= snap->walletMax);
+        {
+            float groupW = 16 * ik + groupGap + numberW;
+            float ixl = x + (w - groupW) / 2;
+            BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl,
+                       (int32_t)ry, ik);
+            DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,
+                          snap->walletMax != 0 && snap->rupees >= snap->walletMax);
+        }
     }
 
     /* Equip rings, centered between the vitals and the chip: A above B.
