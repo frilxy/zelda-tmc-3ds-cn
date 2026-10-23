@@ -860,7 +860,7 @@ target("tmc_pc")
     add_files("port/port_bios.c")
     add_files("port/port_bugreport.cpp")     -- F9 bug-report capture (screenshot + save + state dump)
     add_files("port/port_bugreport_state.c") -- Crash-handler state snapshot
-    add_files("port/port_linked_stubs.c")
+    add_files("port/port_linked_stubs.c", "port/port_widescreen.c")
     add_files("port/port_3ds_full_view_policy.c")
     add_files("port/port_figurines.c")  -- gFigurines[] resolved from ROM (#57)
     add_files("port/port_draw.c")
@@ -2631,7 +2631,7 @@ target("widescreen_stream_test")
     else
         add_ldflags("-Wl,--gc-sections")
     end
-    add_files("port/port_widescreen_stream_test.c", "port/port_linked_stubs.c")
+    add_files("port/port_widescreen_stream_test.c", "port/port_linked_stubs.c", "port/port_widescreen.c")
     add_files("port/port_3ds_full_view_policy.c", "port/ppu/src/mode1.c")
     add_syslinks("m")
 target_end()

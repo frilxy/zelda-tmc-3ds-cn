@@ -100,14 +100,12 @@ static void AuxCutscene_Main(void) {
 #ifdef PC_PORT
     /* A state callback may start a fade before this routine's late
      * UpdateScroll. Reconcile the viewport before Flush/Draw/CopyOAM. */
-    (void)Port_Widescreen_PrepareGameplayCamera();
 #endif
     FlushSprites();
     UpdateEntities();
 #ifdef PC_PORT
     /* Entity scripts may activate native dialogue/window geometry after the
      * state callback. Catch it before DrawEntities/CopyOAM. */
-    (void)Port_Widescreen_PrepareGameplayCamera();
 #endif
     DrawEntities();
     CopyOAM();
