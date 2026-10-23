@@ -277,6 +277,9 @@ int32_t Port_SecondScreenTheme_TitleTextWidth(const char* str, int32_t scale);
 /* Glyph-cell top that vertically centres a face's ink on centerY.
  * face: 0 = body (Fusion Pixel 12px), 1 = large (Unifont 16px). */
 int32_t Port_SecondScreenTheme_InkTopForCenter(int32_t centerY, int32_t scale, int face);
+/* Draws only the selection-bracket corners around a rect (no plate). */
+int Port_SecondScreenTheme_DrawBrackets(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
+                                        int32_t y, int32_t w, int32_t h, int32_t scale);
 
 /* The pause menu's own labelled button — the pale plate with the blue-grey
  * keyline and blue lettering the SLEEP / SAVE buttons use. Draws the frame

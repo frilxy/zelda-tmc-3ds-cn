@@ -2452,6 +2452,27 @@ int Port_SecondScreenTheme_DrawMenuButton(uint32_t* pixels, int32_t bufW, int32_
     return 1;
 }
 
+/* Selection brackets on their own, without the plate underneath: the same
+ * red-and-white cursor corners the menu draws on a pressed plate, usable to
+ * mark a rect that is painted by another pass (the map's floor plaques). */
+int Port_SecondScreenTheme_DrawBrackets(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
+                                        int32_t y, int32_t w, int32_t h, int32_t scale) {
+    if (!sBuilt || pixels == NULL || sBtnBracket.px == NULL || w <= 0 || h <= 0) {
+        return 0;
+    }
+    if (scale < 1) {
+        scale = 1;
+    }
+    {
+        int32_t bw = (sBtnBracket.w / 2) * scale, bh = (sBtnBracket.h / 2) * scale;
+        BracketCorner(pixels, bufW, bufH, stride, 0, 0, x, y, scale);
+        BracketCorner(pixels, bufW, bufH, stride, 1, 0, x + w - bw, y, scale);
+        BracketCorner(pixels, bufW, bufH, stride, 0, 1, x, y + h - bh, scale);
+        BracketCorner(pixels, bufW, bufH, stride, 1, 1, x + w - bw, y + h - bh, scale);
+    }
+    return 1;
+}
+
 int Port_SecondScreenTheme_DrawRButton(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                                        int32_t y, int32_t scale2) {
     const SecondScreenThemeSprite* s = Port_SecondScreenTheme_Get(SST_BUTTON_R);
