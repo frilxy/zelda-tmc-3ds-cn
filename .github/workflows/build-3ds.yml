@@ -4,8 +4,14 @@ on:
   push:
     branches:
       - bottom-screen
+    tags:
+      - 'v*'
   pull_request:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: '已有 tag（例如 v2.1.1）；留空则只构建不发布'
+        required: false
 
 permissions:
   contents: read
@@ -23,6 +29,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: Verify bundled build tools
         run: |
@@ -65,6 +73,9 @@ jobs:
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
 
+      - name: Verify release notes are updater-safe
+        run: python3 scripts/dev/check_release_notes.py CHANGELOG-cn.md
+
       - name: Upload JP packages
         uses: actions/upload-artifact@v7
         with:
@@ -73,3 +84,84 @@ jobs:
           path: |
             build-3ds/game/tmc-3ds-v*.3dsx
             build-3ds/game/tmc-3ds-v*.cia
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Verify tag matches platform/3ds/version.txt
+        run: |
+          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          TAG="${GITHUB_REF_NAME}"
+          if [ "v${VERSION}" != "${TAG}" ]; then
+            echo "::error::tag ${TAG} does not match platform/3ds/version.txt (v${VERSION})"
+            exit 1
+          fi
+          case "${VERSION}" in
+            *-E*)
+              echo "This tag is a pre-release."
+              echo "PRERELEASE=true" >> "${GITHUB_ENV}"
+              ;;
+            *)
+              echo "PRERELEASE=false" >> "${GITHUB_ENV}"
+              ;;
+          esac
+
+      - name: Download built packages
+        uses: actions/download-artifact@v8
+        with:
+          name: tmc-3ds-packages-JP
+          path: dist
+
+      - name: Assemble release assets
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          TAG="${GITHUB_REF_NAME}"
+
+          # The in-app updater requests assets by exact filename
+          # (tmc-3ds-v<version>.cia / .3dsx) and verifies the SHA-256 digest
+          # GitHub reports, so both files must stay at the asset root.
+          test -f "dist/tmc-3ds-v${VERSION}.cia"
+          test -f "dist/tmc-3ds-v${VERSION}.3dsx"
+
+          (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" "tmc-3ds-v${VERSION}.3dsx" > SHA256SUMS.txt)
+
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq qrencode
+          qrencode -o "dist/QR-${TAG}-github.png" -s 6 -m 2 \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
+          # Published verbatim: the on-device changelog view starts at the
+          # file's own "## Changelog" heading, which must stay ASCII-only.
+          cp CHANGELOG-cn.md release-notes.md
+          echo "TMCPORTVERSION=${VERSION}" >> "${GITHUB_ENV}"
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          ARGS=(--title "${TAG}" --notes-file release-notes.md --verify-tag)
+          if [ "${PRERELEASE}" = "true" ]; then
+            ARGS+=(--prerelease)
+          fi
+          gh release create "${TAG}" \
+            "${ARGS[@]}" \
+            "dist/tmc-3ds-v${TMCPORTVERSION}.cia" \
+            "dist/tmc-3ds-v${TMCPORTVERSION}.3dsx" \
+            "dist/SHA256SUMS.txt" \
+            "dist/QR-${TAG}-github.png"
