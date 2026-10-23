@@ -2977,42 +2977,42 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     DrawRPrompt(s, snap, x, promptBands.promptY, w, promptBands.promptHeight, u, ts);
     vitalsBottom = promptBands.contentBottom;
 
-    /* Bare counters sit above the tab bar without another stone tray. A
-     * dungeon used to stack the small-key row UNDER the rupee row, which made
-     * the block taller and pushed the equip rings smaller -- the rings then
-     * shrank on entering any dungeon. The key now sits to the LEFT of the
-     * rupee on the same row, so the sidebar geometry is identical above and
-     * below ground. */
+    /* Bare counters sit above the tab bar without another stone tray, on ONE
+     * row: the small key left of the rupee in a dungeon. Scale is computed
+     * with the key group present on every map, so the rupee is the same size
+     * indoors and out, and the block never grows a second row -- the equip
+     * rings above it keep the space they have above ground. */
     int32_t ik = 2 * k;           /* icon scale (16x16 art) */
     int32_t ck = k + (k + 1) / 2; /* digit scale (8x16 HUD font) */
     float chipPad = 2 * u;
     float groupGap = 6 * u;
     float innerW = w - 2 * chipPad;
-    /* Two rows are always reserved: small keys above the rupee count when
-     * underground, empty above ground. Reserving both regardless is what keeps
-     * the rupee the same size and in the same place in and out of a dungeon --
-     * a layout that grew a second row only in dungeons shrank the equip rings
-     * the moment you walked through a door. */
-    int chipRows = 2;
-    while (ck > 1 && 16 * ik + groupGap + 3 * 8 * ck > innerW)
+    float keyGroupW = 16 * ik + groupGap + 2 * 8 * ck + groupGap;
+    while (ck > 1 && keyGroupW + 16 * ik + groupGap + 3 * 8 * ck > innerW) {
         --ck;
-    while (ik > 1 && 16 * ik + groupGap + 3 * 8 * ck > innerW)
+        keyGroupW = 16 * ik + groupGap + 2 * 8 * ck + groupGap;
+    }
+    while (ik > 1 && keyGroupW + 16 * ik + groupGap + 3 * 8 * ck > innerW) {
         --ik;
+        keyGroupW = 16 * ik + groupGap + 2 * 8 * ck + groupGap;
+    }
     float numberW = 3 * 8 * ck;
     float rowH = 16 * (ik > ck ? ik : ck);
-    float chipH = chipRows * rowH + (chipRows - 1) * 6 * u + 2 * chipPad;
+    float chipH = rowH + 2 * chipPad;
     float chipY = y + h - chipH - 30 * u;
     {
-        float groupW = 16 * ik + groupGap + numberW;
-        float ixl = x + (w - groupW) / 2;
-        float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
         float ry = chipY + chipPad;
+        float groupW = 16 * ik + groupGap + numberW;
+        /* Center the whole row, key group included, so the key cannot hang
+         * off the sidebar's left edge. */
+        float ixl = x + (w - (groupW + keyGroupW)) / 2 + keyGroupW;
+        float dy = (16 * ik - 16 * ck) / 2.0f; /* digits centered on the icon row */
         if (isDungeon) {
-            BlitSprite(s, Port_SecondScreenTheme_Get(SST_KEY), (int32_t)ixl, (int32_t)ry, ik);
-            DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->dungeonKeys,
-                          2, 0);
+            float keyIx = ixl - keyGroupW;
+            BlitSprite(s, Port_SecondScreenTheme_Get(SST_KEY), (int32_t)keyIx, (int32_t)ry, ik);
+            DrawHudNumber(s, (int32_t)(keyIx + 16 * ik + groupGap + 2 * 8 * ck), (int32_t)(ry + dy), ck,
+                          snap->dungeonKeys, 2, 0);
         }
-        ry += rowH + 6 * u;
         BlitSprite(s, Port_SecondScreenTheme_Get(SST_RUPEE_WALLET0 + (snap->walletType & 3)), (int32_t)ixl, (int32_t)ry,
                    ik);
         DrawHudNumber(s, (int32_t)(ixl + 16 * ik + groupGap + numberW), (int32_t)(ry + dy), ck, snap->rupees, 3,
