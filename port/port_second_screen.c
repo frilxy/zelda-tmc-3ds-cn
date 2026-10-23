@@ -724,6 +724,18 @@ enum { SS_PLATE_FLOOR = 0, SS_PLATE_TITLE = 1, SS_PLATE_DARK = 2 };
 #define COL_PLATE_TITLE_EDGE RGB(189, 243, 247)
 #define COL_PLATE_TITLE_OUTER RGB(49, 4, 90)
 
+/* Fills a rect with its four corner pixels left untouched, so the plate reads
+ * rounded against whatever is behind it (same idea as the tab plates). */
+static void FillChamferRect(const SSurf* s, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t color) {
+    if (x1 - x0 < 3 || y1 - y0 < 3) {
+        FillRect(s, x0, y0, x1, y1, color);
+        return;
+    }
+    FillRect(s, x0 + 1, y0, x1 - 1, y0 + 1, color);
+    FillRect(s, x0, y0 + 1, x1, y1 - 1, color);
+    FillRect(s, x0 + 1, y1 - 1, x1 - 1, y1, color);
+}
+
 static void DrawLabelPlate(const SSurf* s, float fx0, float fy0, float fx1, float fy1, int style) {
     int32_t x0 = (int32_t)fx0, y0 = (int32_t)fy0, x1 = (int32_t)fx1, y1 = (int32_t)fy1;
     uint32_t fill, edge;
@@ -747,9 +759,9 @@ static void DrawLabelPlate(const SSurf* s, float fx0, float fy0, float fx1, floa
     }
 
     if (style == SS_PLATE_TITLE) {
-        FillRect(s, x0, y0, x1, y1, COL_PLATE_TITLE_OUTER);
-        FillRect(s, x0 + 1, y0 + 1, x1 - 1, y1 - 1, edge);
-        FillRect(s, x0 + 3, y0 + 3, x1 - 3, y1 - 3, fill);
+        FillChamferRect(s, x0, y0, x1, y1, COL_PLATE_TITLE_OUTER);
+        FillChamferRect(s, x0 + 1, y0 + 1, x1 - 1, y1 - 1, edge);
+        FillChamferRect(s, x0 + 3, y0 + 3, x1 - 3, y1 - 3, fill);
     } else {
         FillRect(s, x0, y0, x1, y1, edge);
         FillRect(s, x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill);
@@ -1626,6 +1638,15 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
                          SS_FACE_BODY);
         /* A small gold marker keeps Link's floor obvious while another one
          * is being previewed. */
+        if (sel) {
+            /* Same red-and-white cursor corners the menu puts on a pressed
+             * plate -- the marker the items grid already uses. */
+            int32_t bscale = (int32_t)(2.0f * u);
+            if (bscale < 1)
+                bscale = 1;
+            Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, (int32_t)px0, (int32_t)y0, (int32_t)pw,
+                                                (int32_t)ph, bscale);
+        }
         if (isPlayers) {
             DrawMapMarker(s, (int32_t)(px0 + 13 * u), (int32_t)(y0 + ph / 2), (int32_t)(3 * u), gold);
         }
