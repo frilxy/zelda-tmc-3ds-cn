@@ -1811,7 +1811,12 @@ void Port_LoadRom(const char* path) {
         extern u8 gUnk_080C9044[];
         if (R->uiData + 8 <= gRomSize) {
             memcpy(gUnk_080C9044, &gRomData[R->uiData], 8);
-        } else {
+        }
+        /* Slot 0 is the Japanese base (130 on every retail ROM), so a zero
+         * there means the offset missed. Every HUD action label then indexes
+         * the item icons instead of the text art -- the R prompt drew a
+         * boomerang / Mirror Shield. Fall back to the baked-in table. */
+        if (gUnk_080C9044[0] == 0) {
             memcpy(gUnk_080C9044, kUiInitData, 8);
         }
     }
