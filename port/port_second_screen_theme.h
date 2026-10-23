@@ -278,6 +278,11 @@ int32_t Port_SecondScreenTheme_TitleTextWidth(const char* str, int32_t scale);
  * face: 0 = body (Fusion Pixel 12px), 1 = large (Unifont 16px). */
 int32_t Port_SecondScreenTheme_InkTopForCenter(int32_t centerY, int32_t scale, int face);
 /* Draws only the selection-bracket corners around a rect (no plate). */
+/* HUD-font (8x16 sprite) number, right aligned. Returns the left edge. */
+int32_t Port_SecondScreenTheme_DrawHudNumber(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                             int32_t xRight, int32_t y, int32_t scale, uint32_t value,
+                                             int32_t minDigits, int yellow);
+
 int Port_SecondScreenTheme_DrawBrackets(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                                         int32_t y, int32_t w, int32_t h, int32_t scale, uint32_t tint);
 
