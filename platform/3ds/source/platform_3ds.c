@@ -140,8 +140,15 @@ int Platform3DS_Init(void) {
     romfsInit();
     consoleInit(GFX_BOTTOM, NULL);
     /* Boot console: white paper with the project's green ink (#007D1C).
-     * libctru takes RGB565; the argument order is (foreground, background). */
-    consoleSetColors(consoleGetDefault(), RGB8(0x00, 0x7D, 0x1C), RGB8(0xFF, 0xFF, 0xFF));
+     * This libctru has no consoleSetColors(), so set the fields directly;
+     * both are RGB565. #007D1C -> 0x03E3, white -> 0xFFFF. */
+    {
+        PrintConsole* bootConsole = consoleGetDefault();
+        if (bootConsole != NULL) {
+            bootConsole->foreground = 0x03E3u;
+            bootConsole->background = 0xFFFFu;
+        }
+    }
 
     aptSetHomeAllowed(true);
     aptSetSleepAllowed(true);
