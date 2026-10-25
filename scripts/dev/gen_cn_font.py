@@ -62,8 +62,15 @@ def is_cjk(ch):
             or "\uff00" <= ch <= "\uffef")
 
 
+# Symbols the second-screen UI draws directly. They are not CJK and do not
+# appear as literals in a scanned source, so they are listed here: ⌕ is the
+# map's zoom chip and ↩ its back chip.
+EXTRA_SYMBOLS = "\u2315\u21a9"
+
+
 def used_chars():
     seen = set(chr(c) for c in range(0x20, 0x7F))
+    seen.update(EXTRA_SYMBOLS)
     for rel in SOURCES:
         path = os.path.join(ROOT, rel)
         if not os.path.exists(path):
