@@ -279,7 +279,10 @@ void Port_HashBuffer(const void* data, size_t size, PortRomHashes* out) {
 }
 
 int Port_HashFile(const char* path, PortRomHashes* out) {
-    uint8_t buffer[4096];
+    /* 64 KiB instead of 4 KiB: a 16 MiB ROM went through 4096 read syscalls,
+     * and on the 3DS SD card the call overhead dominates. Static rather than
+     * stack -- the app thread's stack cannot spare 64 KiB. */
+    static uint8_t buffer[65536];
     size_t total = 0;
     Sha1Context sha1;
     Sha256Context sha256;
