@@ -139,6 +139,18 @@ int Platform3DS_Init(void) {
     cfguInit();
     romfsInit();
     consoleInit(GFX_BOTTOM, NULL);
+    /* Boot console: white paper with the project's green ink (#007D1C).
+     * libctru stores both as RGB565 in fg/bg, and only treats them as literal
+     * colours when the matching CUSTOM flag is set -- otherwise it indexes
+     * colorTable with them. #007D1C -> 0x03E3, white -> 0xFFFF. */
+    {
+        PrintConsole* bootConsole = consoleGetDefault();
+        if (bootConsole != NULL) {
+            bootConsole->fg = 0x03E3u;
+            bootConsole->bg = 0xFFFFu;
+            bootConsole->flags |= CONSOLE_FG_CUSTOM | CONSOLE_BG_CUSTOM;
+        }
+    }
 
     aptSetHomeAllowed(true);
     aptSetSleepAllowed(true);

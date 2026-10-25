@@ -47,29 +47,129 @@ static int RomMatchesBuildFamily(const PortRomProfile* profile) {
 }
 
 static const char* RequiredBuildBaseline(const PortRomProfile* profile) {
-    if (profile != NULL && profile->region == ROM_REGION_JP) return "JP";
+    if (profile != NULL && profile->region == ROM_REGION_JP)
+        return "JP";
     return "USA";
+}
+
+/* ROM hash cache.
+ *
+ * Hashing a 16 MiB ROM with SHA-1 and SHA-256 costs more than the rest of the
+ * boot put together, and the answer cannot change unless the file does. The
+ * cache lives in the app directory and is keyed by name + size + mtime, so a
+ * normal second launch skips hashing entirely. */
+#define ROM_HASH_CACHE_PATH "romhash.cache"
+#define ROM_HASH_CACHE_MAX 8
+
+typedef struct {
+    char path[ROM_PATH_SIZE];
+    long long size;
+    long long mtime;
+    char sha1[41];
+    char sha256[65];
+} RomHashCacheEntry;
+
+static int LoadRomHashCache(RomHashCacheEntry* entries, int capacity) {
+    FILE* f = fopen(ROM_HASH_CACHE_PATH, "r");
+    int n = 0;
+    if (f == NULL)
+        return 0;
+    while (n < capacity && fscanf(f, "%255s %lld %lld %40s %64s", entries[n].path, &entries[n].size, &entries[n].mtime,
+                                  entries[n].sha1, entries[n].sha256) == 5) {
+        ++n;
+    }
+    fclose(f);
+    return n;
+}
+
+static void StoreRomHashCache(RomHashCacheEntry* entries, int n) {
+    FILE* f = fopen(ROM_HASH_CACHE_PATH, "w");
+    if (f == NULL)
+        return;
+    for (int i = 0; i < n; ++i) {
+        fprintf(f, "%s %lld %lld %s %s\n", entries[i].path, entries[i].size, entries[i].mtime, entries[i].sha1,
+                entries[i].sha256);
+    }
+    fclose(f);
 }
 
 static int PrepareStorage(void) {
     mkdir("sdmc:/3ds", 0777);
-    if (mkdir(APP_DIR, 0777) != 0 && errno != EEXIST) return 0;
+    if (mkdir(APP_DIR, 0777) != 0 && errno != EEXIST)
+        return 0;
     return chdir(APP_DIR) == 0;
 }
 
 static int HasGbaExtension(const char* name) {
     const size_t length = strlen(name);
-    if (length < 5) return 0;
+    if (length < 5)
+        return 0;
     const char* ext = name + length - 4;
-    return tolower((unsigned char)ext[0]) == '.' &&
-           tolower((unsigned char)ext[1]) == 'g' &&
-           tolower((unsigned char)ext[2]) == 'b' &&
-           tolower((unsigned char)ext[3]) == 'a';
+    return tolower((unsigned char)ext[0]) == '.' && tolower((unsigned char)ext[1]) == 'g' &&
+           tolower((unsigned char)ext[2]) == 'b' && tolower((unsigned char)ext[3]) == 'a';
 }
 
-static int RomIsSupported(const char* path) {
+static RomHashCacheEntry sRomHashCache[ROM_HASH_CACHE_MAX];
+static int sRomHashCacheCount;
+static int sRomHashCacheDirty;
+
+/* Returns 1 when the cache answered for `path`. */
+static int RomHashesFromCache(const char* path, const struct stat* info, PortRomHashes* out) {
+    for (int i = 0; i < sRomHashCacheCount; ++i) {
+        const RomHashCacheEntry* e = &sRomHashCache[i];
+        if (e->size != (long long)info->st_size || e->mtime != (long long)info->st_mtime ||
+            strcmp(e->path, path) != 0) {
+            continue;
+        }
+        memset(out, 0, sizeof(*out));
+        out->size = (uint32_t)info->st_size;
+        snprintf(out->sha1, sizeof(out->sha1), "%s", e->sha1);
+        snprintf(out->sha256, sizeof(out->sha256), "%s", e->sha256);
+        return 1;
+    }
+    return 0;
+}
+
+static void RomHashesStoreCache(const char* path, const struct stat* info, const PortRomHashes* hashes) {
+    int slot = -1;
+    for (int i = 0; i < sRomHashCacheCount; ++i) {
+        if (strcmp(sRomHashCache[i].path, path) == 0) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        if (sRomHashCacheCount < ROM_HASH_CACHE_MAX) {
+            slot = sRomHashCacheCount++;
+        } else {
+            slot = 0; /* evict the oldest slot; the list is tiny and unordered */
+        }
+    }
+    snprintf(sRomHashCache[slot].path, sizeof(sRomHashCache[slot].path), "%s", path);
+    sRomHashCache[slot].size = (long long)info->st_size;
+    sRomHashCache[slot].mtime = (long long)info->st_mtime;
+    snprintf(sRomHashCache[slot].sha1, sizeof(sRomHashCache[slot].sha1), "%s", hashes->sha1);
+    snprintf(sRomHashCache[slot].sha256, sizeof(sRomHashCache[slot].sha256), "%s", hashes->sha256);
+    sRomHashCacheDirty = 1;
+}
+
+static int RomIsSupported(const char* path, const struct stat* info) {
     PortRomHashes hashes = { 0 };
-    const PortRomProfile* profile = Port_IdentifyRomFile(path, &hashes);
+    const PortRomProfile* profile;
+    if (info != NULL && RomHashesFromCache(path, info, &hashes)) {
+        char gameCode[4] = { 0 };
+        FILE* gc = fopen(path, "rb");
+        if (gc != NULL) {
+            if (fseek(gc, 0xAC, SEEK_SET) == 0)
+                (void)fread(gameCode, 1, sizeof(gameCode), gc);
+            fclose(gc);
+        }
+        profile = Port_IdentifyRomHashes(&hashes, gameCode);
+    } else {
+        profile = Port_IdentifyRomFile(path, &hashes);
+        if (info != NULL && profile != NULL)
+            RomHashesStoreCache(path, info, &hashes);
+    }
     if (!Port_RomProfileIsPlayable(profile)) {
         if (hashes.sha256[0] != '\0') {
             printf("Skipping unsupported ROM: %s\nSHA-256: %s\n", path, hashes.sha256);
@@ -77,7 +177,8 @@ static int RomIsSupported(const char* path) {
         return 0;
     }
     if (!RomMatchesBuildFamily(profile)) {
-        if (sMismatchedRomProfile == NULL) sMismatchedRomProfile = profile;
+        if (sMismatchedRomProfile == NULL)
+            sMismatchedRomProfile = profile;
         printf("Skipping ROM for a different build family: %s\n"
                "Profile: %s\nBuild baseline: %s\nRequired baseline: %s\n",
                path, profile->displayName, BuildBaselineName(), RequiredBuildBaseline(profile));
@@ -90,39 +191,51 @@ static int RomIsSupported(const char* path) {
 
 static int FindRom(char* out, size_t outSize) {
     DIR* dir = opendir(".");
-    if (!dir) return 0;
+    if (!dir)
+        return 0;
+    sRomHashCacheCount = LoadRomHashCache(sRomHashCache, ROM_HASH_CACHE_MAX);
+    sRomHashCacheDirty = 0;
 
     int foundGba = 0;
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_name[0] == '.') continue;
-        if (!HasGbaExtension(entry->d_name)) continue;
+        if (entry->d_name[0] == '.')
+            continue;
+        if (!HasGbaExtension(entry->d_name))
+            continue;
 
         struct stat info;
-        if (stat(entry->d_name, &info) != 0 || !S_ISREG(info.st_mode)) continue;
+        if (stat(entry->d_name, &info) != 0 || !S_ISREG(info.st_mode))
+            continue;
         foundGba = 1;
-        if (!RomIsSupported(entry->d_name)) continue;
+        if (!RomIsSupported(entry->d_name, &info))
+            continue;
         snprintf(out, outSize, "%s", entry->d_name);
         closedir(dir);
+        if (sRomHashCacheDirty)
+            StoreRomHashCache(sRomHashCache, sRomHashCacheCount);
         return 1;
     }
 
     closedir(dir);
-    if (sMismatchedRomProfile != NULL) return -2;
+    if (sRomHashCacheDirty)
+        StoreRomHashCache(sRomHashCache, sRomHashCacheCount);
+    if (sMismatchedRomProfile != NULL)
+        return -2;
     return foundGba ? -1 : 0;
 }
 
 int main(int argc, char** argv) {
     (void)argc;
     (void)argv;
-    if (!Platform3DS_Init()) return 1;
+    if (!Platform3DS_Init())
+        return 1;
     Platform3DS_ShowSplash();
 
     printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
     printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
     printf("Performance: %s\n",
-           Platform3DS_IsNew3DS() ? "New 3DS full presentation"
-                                  : "Old 3DS adaptive presentation skip (max 3)");
+           Platform3DS_IsNew3DS() ? "New 3DS full presentation" : "Old 3DS adaptive presentation skip (max 3)");
     printf("PPU worker core 1: %u%%\n", Platform3DS_Core1TimeLimit());
     printf("Extra New 3DS core: %s\n\n", Platform3DS_IsNew3DS() ? "enabled" : "unavailable");
     printf("Preparing storage...\n");
@@ -158,7 +271,9 @@ int main(int argc, char** argv) {
                      "Supported: USA, Europe, clean Japan, and Angel Chinese SP4.",
                      APP_DIR);
         }
-        Platform3DS_ShowFatal(romResult == -2 ? "ROM/build mismatch" : romResult < 0 ? "Unsupported ROM" : "ROM not found",
+        Platform3DS_ShowFatal(romResult == -2 ? "ROM/build mismatch"
+                              : romResult < 0 ? "Unsupported ROM"
+                                              : "ROM not found",
                               message);
         Platform3DS_Shutdown();
         return 1;
