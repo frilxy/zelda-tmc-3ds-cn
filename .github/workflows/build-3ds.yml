@@ -3,7 +3,7 @@ name: Build 3DS
 on:
   push:
     branches:
-      - bottom-screen
+      - main
     tags:
       - 'v*'
   pull_request:
