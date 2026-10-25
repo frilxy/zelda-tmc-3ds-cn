@@ -764,6 +764,11 @@ static void DrawLabelPlate(const SSurf* s, float fx0, float fy0, float fx1, floa
         FillChamferRect(s, x0, y0, x1, y1, COL_PLATE_TITLE_OUTER);
         FillChamferRect(s, x0 + 1, y0 + 1, x1 - 1, y1 - 1, edge);
         FillChamferRect(s, x0 + 3, y0 + 3, x1 - 3, y1 - 3, fill);
+    } else if (style == SS_PLATE_FLOOR) {
+        /* Same 2px black rim, but the corners are knocked out so the stacked
+         * plaques read as rounded tiles instead of one black slab. */
+        FillChamferRect(s, x0, y0, x1, y1, edge);
+        FillChamferRect(s, x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill);
     } else {
         FillRect(s, x0, y0, x1, y1, edge);
         FillRect(s, x0 + 2, y0 + 2, x1 - 2, y1 - 2, fill);
@@ -1196,6 +1201,25 @@ static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBot
     out[3] = y1;
 }
 
+/* Same plate, anchored by its top-left corner instead of its centre. The
+ * size is derived exactly the way DrawMapChip derives it, so a chip moved to
+ * a new anchor keeps its proportions. */
+static void DrawMapChipAt(const SSurf* s, const char* label, float x0, float y0, float u, float* out) {
+    int32_t ms = (int32_t)(2.6f * u);
+    if (ms < 1)
+        ms = 1;
+    int32_t tw = MenuTextWidthFace(label, ms, SS_FACE_LARGE);
+    float ch = MENU_TEXT_BOX * ms + 30 * u;
+    float w = tw + 68 * u;
+    float x1 = x0 + w, y1 = y0 + ch;
+    DrawLabelPlate(s, x0, y0, x1, y1, SS_PLATE_TITLE);
+    MenuTextCenteredFace(s, label, (x0 + x1) / 2.0f, (y0 + y1) / 2.0f, ms, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
+    out[0] = x0;
+    out[1] = y0;
+    out[2] = x1;
+    out[3] = y1;
+}
+
 #ifdef TMC_3DS
 static float WholeMapScale(float width, float height) {
     float sx = width / (WMAP_CROP_X1 - WMAP_CROP_X0);
@@ -1433,7 +1457,9 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         /* With no fix, or the follow cam switched off, the whole map is the
          * only view there is and the chip would have nothing to step to. */
         float chip[4];
-        DrawMapChip(s, "缩放", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+        /* Sits where the dungeon floor plaques sit -- same left column, same
+         * top offset -- so the control does not jump between the two maps. */
+        DrawMapChipAt(s, "缩放", rx0 + 20 * u, ry0 + 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
@@ -1627,8 +1653,11 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         } else {
             snprintf(label, sizeof(label), " B%d", 1 - fl);
         }
-        /* Purple plaque with the map's own black rim, stacked flush. */
-        DrawLabelPlate(s, px0, y0, px0 + pw, y0 + ph, SS_PLATE_FLOOR);
+        /* Purple plaque with the map's own black rim. The rect is inset 2px
+         * per side (4px smaller overall) so the rounded corners have room to
+         * show and neighbours stay visually separate. */
+        const float in = 2.0f;
+        DrawLabelPlate(s, px0 + in, y0 + in, px0 + pw - in, y0 + ph - in, SS_PLATE_FLOOR);
         int32_t ms = 1;
         /* Bold by offset: the in-game plaques are lettered heavier than the
          * body face ships, and Fusion Pixel has a single weight. */
@@ -1646,8 +1675,9 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
             int32_t bscale = (int32_t)(2.0f * u);
             if (bscale < 1)
                 bscale = 1;
-            Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, (int32_t)px0, (int32_t)y0, (int32_t)pw,
-                                                (int32_t)ph, bscale, COL_SELECT_RED);
+            Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, (int32_t)(px0 + 2.0f),
+                                                (int32_t)(y0 + 2.0f), (int32_t)(pw - 4.0f), (int32_t)(ph - 4.0f),
+                                                bscale, COL_SELECT_RED);
         }
         if (isPlayers) {
             DrawMapMarker(s, (int32_t)(px0 + 13 * u), (int32_t)(y0 + ph / 2), (int32_t)(3 * u), gold);
