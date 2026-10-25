@@ -8,6 +8,8 @@
 
 #include <3ds.h>
 
+#include "bottom_idle_3ds.h"
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,7 +20,7 @@ static PrintConsole* sBootConsole;
 static int sBootCol;
 static int sBootRow;
 
-static void BootPaintBottomSplash(void);
+static void BootPaintBottomCard(void);
 static bool BootConsolePrint(void* console, int character);
 
 static uint32_t sHeld;
@@ -153,7 +155,7 @@ int Platform3DS_Init(void) {
      * escape sequences; only the glyph painting is ours (see BootConsolePrint). */
     sBootConsole = consoleInit(GFX_BOTTOM, NULL);
     if (sBootConsole != NULL) {
-        BootPaintBottomSplash();
+        BootPaintBottomCard();
         sBootConsole->PrintChar = BootConsolePrint;
     }
 
@@ -249,40 +251,29 @@ static void BootPutPixel(int col, int row, uint16_t rgb565) {
     fb[(size_t)col * 240u + (size_t)(239 - row)] = rgb565;
 }
 
-/* Nearest-neighbour letterbox of the 400x240 splash into the 320x240 panel. */
-static void BootPaintBottomSplash(void) {
-    static uint16_t splash[400u * 240u];
-    FILE* file = fopen("romfs:/splash.rgb565", "rb");
+/* The bottom panel shows the same procedural Triforce card the port uses
+ * while the game sits on its title/file-select tasks -- not a bitmap, so it
+ * stays crisp at 320x240 and needs no asset. */
+static void BootPaintBottomCard(void) {
+    static uint32_t card[BOOT_SCREEN_W * BOOT_SCREEN_H];
     int x, y;
-    if (file == NULL) {
+    if (sBootConsole == NULL) {
         return;
     }
-    if (fread(splash, sizeof(uint16_t), 400u * 240u, file) != 400u * 240u) {
-        fclose(file);
-        return;
-    }
-    fclose(file);
-    /* 400 -> 320 is 4:5, so the art shrinks to 320x192 and sits centred with
-     * 24 px bars top and bottom; nothing is cropped. */
-    const int drawnH = BOOT_SCREEN_H * 4 / 5; /* 192 */
-    const int top = (BOOT_SCREEN_H - drawnH) / 2;
+    BottomIdle3DS_Paint(card, BOOT_SCREEN_W, BOOT_SCREEN_H, BOOT_SCREEN_W, 0u, false);
     for (y = 0; y < BOOT_SCREEN_H; ++y) {
+        const uint32_t* row = card + (size_t)y * BOOT_SCREEN_W;
         for (x = 0; x < BOOT_SCREEN_W; ++x) {
-            uint16_t c = 0;
-            if (y >= top && y < top + drawnH) {
-                const int srcY = (y - top) * 240 / drawnH;
-                const int srcX = x * 400 / BOOT_SCREEN_W;
-                c = splash[srcY * 400 + srcX];
-            }
-            BootPutPixel(x, y, c);
+            const uint32_t px = row[x];
+            const uint16_t rgb = (uint16_t)(((px & 0xF8u) >> 3) | (((px >> 8) & 0xFCu) << 3) |
+                                            (((px >> 16) & 0xF8u) << 8));
+            BootPutPixel(x, y, rgb);
         }
     }
     gfxFlushBuffers();
 }
 
-/* Draws one glyph in white, pixels only -- translucent background. Glyph bits
- * follow libctru's own order: byte 7-i is column i, and 0x80 is the bottom
- * row of that column. */
+/* Draws one glyph in white, pixels only -- no cell background. */
 static void BootPutGlyph(int character) {
     const int index = character - sBootConsole->font.asciiOffset;
     const uint8_t* glyph;
@@ -291,12 +282,15 @@ static void BootPutGlyph(int character) {
         return;
     }
     glyph = sBootConsole->font.gfx + (size_t)index * 8u;
-    for (i = 0; i < 8; ++i) {
-        const uint8_t bits = glyph[7 - i];
-        const int col = sBootCol * BOOT_CELL + i;
-        for (j = 0; j < 8; ++j) {
-            if (bits & (0x80u >> j)) {
-                BootPutPixel(col, sBootRow * BOOT_CELL + (7 - j), 0xFFFFu);
+    /* libctru's own order (consoleDrawChar): byte 7-j is the row 7-j, bottom
+     * up, and bit 0x80>>i is column i. Getting these two swapped rotated every
+     * glyph and made the boot log unreadable. */
+    for (j = 0; j < 8; ++j) {
+        const uint8_t bits = glyph[7 - j];
+        const int row = sBootRow * BOOT_CELL + (7 - j);
+        for (i = 0; i < 8; ++i) {
+            if (bits & (0x80u >> i)) {
+                BootPutPixel(sBootCol * BOOT_CELL + i, row, 0xFFFFu);
             }
         }
     }
