@@ -241,6 +241,11 @@ void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
 #define BOOT_SCREEN_W 320
 #define BOOT_SCREEN_H 240
 #define BOOT_CELL 8
+/* The idle card draws its own gold frame ~12 px in from the edge, so the boot
+ * log stays inside it instead of colliding with the border. */
+#define BOOT_INSET 12
+#define BOOT_COLS ((BOOT_SCREEN_W - 2 * BOOT_INSET) / BOOT_CELL)
+#define BOOT_ROWS ((BOOT_SCREEN_H - 2 * BOOT_INSET) / BOOT_CELL)
 
 
 static void BootPutPixel(int col, int row, uint16_t rgb565) {
@@ -265,8 +270,11 @@ static void BootPaintBottomCard(void) {
         const uint32_t* row = card + (size_t)y * BOOT_SCREEN_W;
         for (x = 0; x < BOOT_SCREEN_W; ++x) {
             const uint32_t px = row[x];
-            const uint16_t rgb = (uint16_t)(((px & 0xF8u) >> 3) | (((px >> 8) & 0xFCu) << 3) |
-                                            (((px >> 16) & 0xF8u) << 8));
+            /* RGB565: red in bits 11..15, green 5..10, blue 0..4. The idle
+             * buffer is RGBA with red in the low byte, so red must be shifted
+             * UP and blue DOWN -- swapping them turned the gold card blue. */
+            const uint16_t rgb = (uint16_t)((((px & 0xF8u) << 8)) | (((px >> 8) & 0xFCu) << 3) |
+                                            (((px >> 16) & 0xF8u) >> 3));
             BootPutPixel(x, y, rgb);
         }
     }
@@ -287,10 +295,10 @@ static void BootPutGlyph(int character) {
      * glyph and made the boot log unreadable. */
     for (j = 0; j < 8; ++j) {
         const uint8_t bits = glyph[7 - j];
-        const int row = sBootRow * BOOT_CELL + (7 - j);
+        const int row = BOOT_INSET + sBootRow * BOOT_CELL + (7 - j);
         for (i = 0; i < 8; ++i) {
             if (bits & (0x80u >> i)) {
-                BootPutPixel(sBootCol * BOOT_CELL + i, row, 0xFFFFu);
+                BootPutPixel(BOOT_INSET + sBootCol * BOOT_CELL + i, row, 0xFFFFu);
             }
         }
     }
@@ -298,7 +306,7 @@ static void BootPutGlyph(int character) {
 
 static bool BootConsolePrint(void* console, int character) {
     PrintConsole* con = (PrintConsole*)console;
-    const int cols = BOOT_SCREEN_W / BOOT_CELL;
+    const int cols = BOOT_COLS;
     (void)con;
     switch (character) {
         case '\r':
@@ -307,7 +315,9 @@ static bool BootConsolePrint(void* console, int character) {
             break;
         case '\n':
             sBootCol = 0;
-            ++sBootRow;
+            if (sBootRow + 1 < BOOT_ROWS) {
+                ++sBootRow;
+            }
             gfxFlushBuffers();
             break;
         case '\t':
@@ -319,7 +329,9 @@ static bool BootConsolePrint(void* console, int character) {
         default:
             if (sBootCol >= cols) {
                 sBootCol = 0;
-                ++sBootRow;
+                if (sBootRow + 1 < BOOT_ROWS) {
+                    ++sBootRow;
+                }
             }
             BootPutGlyph(character);
             ++sBootCol;
