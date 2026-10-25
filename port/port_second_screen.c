@@ -1201,6 +1201,81 @@ static void DrawMapChip(const SSurf* s, const char* label, float cx, float cyBot
     out[3] = y1;
 }
 
+/* Centre of the MAP tab caption: the tab bar splits everything left of the
+ * cog into three equal slots, so the middle one is not the screen centre. */
+static float MapTabCenterX(float width, float u) {
+    const float tabH = 96 * u;
+    const float bh = tabH - 16 * u;
+    const float sq = bh;
+    const float sx1 = width - 8 * u;
+    const float sx0 = sx1 - sq;
+    const float x0 = 8 * u, xr = sx0 - 8 * u, gap = 8 * u;
+    const float bw = (xr - x0 - 2 * gap) / 3.0f;
+    return x0 + 1.5f * bw + gap;
+}
+
+/* Square icon chip: the map's zoom / back controls, lettered as pictograms
+ * instead of words. The frame keeps the label chip's height, the icon sits in
+ * the same 16px box the caption occupied, and the strokes are 2px -- the
+ * weight the offset-bold body face produces at this scale. */
+enum { SS_CHIP_ZOOM = 0, SS_CHIP_BACK };
+
+static void DrawChipStormRing(const SSurf* s, float cx, float cy, float r, uint32_t col) {
+    int32_t y;
+    for (y = (int32_t)(cy - r - 1); y <= (int32_t)(cy + r + 1); ++y) {
+        int32_t x;
+        for (x = (int32_t)(cx - r - 1); x <= (int32_t)(cx + r + 1); ++x) {
+            const float dx = (float)x + 0.5f - cx, dy = (float)y + 0.5f - cy;
+            const float d = sqrtf(dx * dx + dy * dy);
+            if (d >= r - 1.0f && d <= r) {
+                FillRect(s, x, y, x + 1, y + 1, col);
+            }
+        }
+    }
+}
+
+static void DrawChipIcon(const SSurf* s, int icon, float x0, float y0, float side, uint32_t col) {
+    const float th = 2.0f;
+    if (icon == SS_CHIP_ZOOM) {
+        const float cx = x0 + side * 0.40f, cy = y0 + side * 0.40f, r = side * 0.26f;
+        DrawChipStormRing(s, cx, cy, r, col);
+        /* Handle from the ring's lower-right quadrant to the corner. */
+        for (float t = 0.0f; t <= 1.0f; t += 0.02f) {
+            const float hx = cx + r * 0.72f + (side * 0.86f - (cx + r * 0.72f)) * t;
+            const float hy = cy + r * 0.72f + (side * 0.86f - (cy + r * 0.72f)) * t;
+            FillRect(s, (int32_t)hx, (int32_t)hy, (int32_t)(hx + th), (int32_t)(hy + th), col);
+        }
+    } else {
+        const float mid = y0 + side * 0.50f;
+        /* Shaft. */
+        FillRect(s, (int32_t)(x0 + side * 0.14f), (int32_t)(mid - th / 2), (int32_t)(x0 + side * 0.86f),
+                 (int32_t)(mid + th / 2), col);
+        /* Head: two diagonals meeting at the shaft's left end. */
+        for (float t = 0.0f; t <= 1.0f; t += 0.02f) {
+            const float hx = x0 + side * (0.14f + 0.26f * t);
+            const float up = mid - side * 0.24f * (1.0f - t);
+            const float dn = mid + side * 0.24f * (1.0f - t);
+            FillRect(s, (int32_t)hx, (int32_t)up, (int32_t)(hx + th), (int32_t)(up + th), col);
+            FillRect(s, (int32_t)hx, (int32_t)dn, (int32_t)(hx + th), (int32_t)(dn + th), col);
+        }
+    }
+}
+
+static void DrawMapIconChipAt(const SSurf* s, int icon, float x0, float y0, float u, float* out) {
+    int32_t ms = (int32_t)(2.6f * u);
+    if (ms < 1)
+        ms = 1;
+    /* Square: side is the label chip's height, so the two read as one family. */
+    const float side = MENU_TEXT_BOX * ms + 30 * u;
+    const float inset = 15 * u; /* (side - MENU_TEXT_BOX*ms) / 2 */
+    DrawLabelPlate(s, x0, y0, x0 + side, y0 + side, SS_PLATE_TITLE);
+    DrawChipIcon(s, icon, x0 + inset, y0 + inset, side - 2 * inset, Port_SecondScreenTheme_Color(SSC_MENU_WHITE));
+    out[0] = x0;
+    out[1] = y0;
+    out[2] = x0 + side;
+    out[3] = y0 + side;
+}
+
 /* Same plate, anchored by its top-left corner instead of its centre. The
  * size is derived exactly the way DrawMapChip derives it, so a chip moved to
  * a new anchor keeps its proportions. */
@@ -1459,7 +1534,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         float chip[4];
         /* Sits where the dungeon floor plaques sit -- same left column, same
          * top offset -- so the control does not jump between the two maps. */
-        DrawMapChipAt(s, "缩放", rx0 + 20 * u, ry0 + 12 * u, u, chip);
+        DrawMapIconChipAt(s, SS_CHIP_ZOOM, rx0 + 20 * u, ry0 + 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
@@ -1561,7 +1636,7 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     float chip[4];
     /* Same anchor as the zoom chip on the level above: the control lives in
      * the floor-plaque column, not under the map. */
-    DrawMapChipAt(s, "返回", rx0 + 20 * u, ry0 + 12 * u, u, chip);
+    DrawMapIconChipAt(s, SS_CHIP_BACK, rx0 + 20 * u, ry0 + 12 * u, u, chip);
     AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
     /* Anywhere else on the region map goes back too — the same "tap again"
      * gesture that opened it. */
@@ -1624,9 +1699,10 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         int32_t ms = (int32_t)(2.2f * u);
         if (ms < 1)
             ms = 1;
-        /* Centred on the whole panel, not on the map area: the sidebar makes
-         * the map rect left-of-centre, and the banner read lopsided. */
-        float cx = s->w / 2.0f;
+        /* Lined up with the MAP tab button below rather than the screen: the
+         * tab bar is three equal slots plus the cog, so the MAP caption sits
+         * left of centre and the banner follows it. */
+        float cx = MapTabCenterX(s->w, u);
         int32_t tw = MenuTextWidthFace(name, ms, SS_FACE_LARGE);
         float lineH = 16 * ms + 30 * u;
         DrawLabelPlate(s, cx - tw / 2.0f - 34 * u, topY, cx + tw / 2.0f + 34 * u, topY + lineH, SS_PLATE_TITLE);
