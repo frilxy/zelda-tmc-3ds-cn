@@ -148,6 +148,10 @@ int Platform3DS_Init(void) {
             bootConsole->fg = 0x03E3u;
             bootConsole->bg = 0xFFFFu;
             bootConsole->flags |= CONSOLE_FG_CUSTOM | CONSOLE_BG_CUSTOM;
+            /* consoleInit() already cleared the screen with the old (black)
+             * background, and characters only paint their own 8x8 cell, so
+             * the untouched area stayed black. Re-clear now that bg is white. */
+            consoleClear();
         }
     }
 
