@@ -317,6 +317,13 @@ static bool BootConsolePrint(void* console, int character) {
             sBootCol = 0;
             if (sBootRow + 1 < BOOT_ROWS) {
                 ++sBootRow;
+            } else {
+                /* Page flip instead of overprinting: once the last row is
+                 * used, redraw the card and start again from the top. Before
+                 * this the row stopped advancing and every later character
+                 * landed on the same line, which read as garbage. */
+                BootPaintBottomCard();
+                sBootRow = 0;
             }
             gfxFlushBuffers();
             break;
@@ -331,6 +338,9 @@ static bool BootConsolePrint(void* console, int character) {
                 sBootCol = 0;
                 if (sBootRow + 1 < BOOT_ROWS) {
                     ++sBootRow;
+                } else {
+                    BootPaintBottomCard();
+                    sBootRow = 0;
                 }
             }
             BootPutGlyph(character);
