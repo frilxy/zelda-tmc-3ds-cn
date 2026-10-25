@@ -7,10 +7,19 @@
 #include "port_second_screen_sync_3ds.h"
 
 #include <3ds.h>
+
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Boot-screen console state and hooks (defined further down). */
+static PrintConsole* sBootConsole;
+static int sBootCol;
+static int sBootRow;
+
+static void BootPaintBottomSplash(void);
+static bool BootConsolePrint(void* console, int character);
 
 static uint32_t sHeld;
 static uint32_t sDown;
@@ -138,21 +147,14 @@ int Platform3DS_Init(void) {
     gfxSet3D(false);
     cfguInit();
     romfsInit();
-    /* Boot console: white paper with the project's green ink (#007D1C).
-     * libctru stores both as RGB565 in fg/bg, and only treats them as literal
-     * colours when the matching CUSTOM flag is set -- otherwise it indexes
-     * colorTable with them. #007D1C -> 0x03E3, white -> 0xFFFF. */
-    {
-        PrintConsole* bootConsole = consoleInit(GFX_BOTTOM, NULL);
-        if (bootConsole != NULL) {
-            bootConsole->fg = 0x03E3u;
-            bootConsole->bg = 0xFFFFu;
-            bootConsole->flags |= CONSOLE_FG_CUSTOM | CONSOLE_BG_CUSTOM;
-            /* consoleInit() already cleared the screen with the old (black)
-             * background, and characters only paint their own 8x8 cell, so
-             * the untouched area stayed black. Re-clear now that bg is white. */
-            consoleClear();
-        }
+    /* Boot screen: the splash art fills the bottom panel and the boot log
+     * lettering is drawn straight over it in white -- no character cells, no
+     * background fill. consoleInit() still owns layout, line feeds and any
+     * escape sequences; only the glyph painting is ours (see BootConsolePrint). */
+    sBootConsole = consoleInit(GFX_BOTTOM, NULL);
+    if (sBootConsole != NULL) {
+        BootPaintBottomSplash();
+        sBootConsole->PrintChar = BootConsolePrint;
     }
 
     aptSetHomeAllowed(true);
@@ -221,6 +223,115 @@ bool Platform3DS_TurboHeld(void) { return sIsNew3DS && sCStickHeld; }
 unsigned Platform3DS_TurboMultiplier(void) { return sTurboMultiplier; }
 void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
+}
+
+/* ---- Boot screen -------------------------------------------------------
+ *
+ * The bottom panel shows the same splash art as the top one and the boot log
+ * is lettered over it in white. libctru's console paints an opaque 8x8 cell
+ * per character (glyph + background), which is exactly what we do not want
+ * here, so the console gets a PrintChar callback: it then routes every
+ * character through BootConsolePrint() and skips its own tile drawing.
+ *
+ * The framebuffer is column major -- index = column * 240 + (239 - row) --
+ * which is the layout consoleDrawChar() itself uses.
+ */
+#define BOOT_SCREEN_W 320
+#define BOOT_SCREEN_H 240
+#define BOOT_CELL 8
+
+
+static void BootPutPixel(int col, int row, uint16_t rgb565) {
+    uint16_t* fb = sBootConsole != NULL ? sBootConsole->frameBuffer : NULL;
+    if (fb == NULL || col < 0 || col >= BOOT_SCREEN_W || row < 0 || row >= BOOT_SCREEN_H) {
+        return;
+    }
+    fb[(size_t)col * 240u + (size_t)(239 - row)] = rgb565;
+}
+
+/* Nearest-neighbour letterbox of the 400x240 splash into the 320x240 panel. */
+static void BootPaintBottomSplash(void) {
+    static uint16_t splash[400u * 240u];
+    FILE* file = fopen("romfs:/splash.rgb565", "rb");
+    int x, y;
+    if (file == NULL) {
+        return;
+    }
+    if (fread(splash, sizeof(uint16_t), 400u * 240u, file) != 400u * 240u) {
+        fclose(file);
+        return;
+    }
+    fclose(file);
+    /* 400 -> 320 is 4:5, so the art shrinks to 320x192 and sits centred with
+     * 24 px bars top and bottom; nothing is cropped. */
+    const int drawnH = BOOT_SCREEN_H * 4 / 5; /* 192 */
+    const int top = (BOOT_SCREEN_H - drawnH) / 2;
+    for (y = 0; y < BOOT_SCREEN_H; ++y) {
+        for (x = 0; x < BOOT_SCREEN_W; ++x) {
+            uint16_t c = 0;
+            if (y >= top && y < top + drawnH) {
+                const int srcY = (y - top) * 240 / drawnH;
+                const int srcX = x * 400 / BOOT_SCREEN_W;
+                c = splash[srcY * 400 + srcX];
+            }
+            BootPutPixel(x, y, c);
+        }
+    }
+    gfxFlushBuffers();
+}
+
+/* Draws one glyph in white, pixels only -- translucent background. Glyph bits
+ * follow libctru's own order: byte 7-i is column i, and 0x80 is the bottom
+ * row of that column. */
+static void BootPutGlyph(int character) {
+    const int index = character - sBootConsole->font.asciiOffset;
+    const uint8_t* glyph;
+    int i, j;
+    if (index < 0 || index >= sBootConsole->font.numChars) {
+        return;
+    }
+    glyph = sBootConsole->font.gfx + (size_t)index * 8u;
+    for (i = 0; i < 8; ++i) {
+        const uint8_t bits = glyph[7 - i];
+        const int col = sBootCol * BOOT_CELL + i;
+        for (j = 0; j < 8; ++j) {
+            if (bits & (0x80u >> j)) {
+                BootPutPixel(col, sBootRow * BOOT_CELL + (7 - j), 0xFFFFu);
+            }
+        }
+    }
+}
+
+static bool BootConsolePrint(void* console, int character) {
+    PrintConsole* con = (PrintConsole*)console;
+    const int cols = BOOT_SCREEN_W / BOOT_CELL;
+    (void)con;
+    switch (character) {
+        case '\r':
+            sBootCol = 0;
+            gfxFlushBuffers();
+            break;
+        case '\n':
+            sBootCol = 0;
+            ++sBootRow;
+            gfxFlushBuffers();
+            break;
+        case '\t':
+            sBootCol = (sBootCol + 4) & ~3;
+            break;
+        case '\b':
+            if (sBootCol > 0) --sBootCol;
+            break;
+        default:
+            if (sBootCol >= cols) {
+                sBootCol = 0;
+                ++sBootRow;
+            }
+            BootPutGlyph(character);
+            ++sBootCol;
+            break;
+    }
+    return true;
 }
 
 void Platform3DS_ShowSplash(void) {
