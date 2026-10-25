@@ -1559,7 +1559,9 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     }
 
     float chip[4];
-    DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+    /* Same anchor as the zoom chip on the level above: the control lives in
+     * the floor-plaque column, not under the map. */
+    DrawMapChipAt(s, "返回", rx0 + 20 * u, ry0 + 12 * u, u, chip);
     AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
     /* Anywhere else on the region map goes back too — the same "tap again"
      * gesture that opened it. */
@@ -1622,7 +1624,9 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         int32_t ms = (int32_t)(2.2f * u);
         if (ms < 1)
             ms = 1;
-        float cx = (rx0 + rx1) / 2.0f;
+        /* Centred on the whole panel, not on the map area: the sidebar makes
+         * the map rect left-of-centre, and the banner read lopsided. */
+        float cx = s->w / 2.0f;
         int32_t tw = MenuTextWidthFace(name, ms, SS_FACE_LARGE);
         float lineH = 16 * ms + 30 * u;
         DrawLabelPlate(s, cx - tw / 2.0f - 34 * u, topY, cx + tw / 2.0f + 34 * u, topY + lineH, SS_PLATE_TITLE);
