@@ -148,13 +148,6 @@ typedef struct PpuGpu3DSCache {
 typedef struct PpuGpu3DSFrameView {
     unsigned width, height;
     bool affine, ioUniform;
-    /* Snap every quad edge to a whole pixel before the NDC conversion.
-     * A non-integer scale (240 -> 360 is 1.5x) leaves each quad on a half
-     * pixel phase of its own, so a one-pixel black outline is sampled on
-     * some columns of a row and not others -- it renders as a dashed line.
-     * Snapping trades sub-pixel positional accuracy for continuous edges,
-     * which is the right trade for pixel art. */
-    bool snapPixels;
     uint16_t frameDispcnt;
     VirtuaPPUMode1GbaMemory memory;
     const uint8_t* ioPerLine;

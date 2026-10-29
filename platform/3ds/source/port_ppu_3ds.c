@@ -164,9 +164,6 @@ static void FillPreparedFrameView(PpuGpu3DSFrameView* view) {
     memset(view, 0, sizeof(*view));
     view->width = sTopPresentWidth;
     view->height = MODE1_GBA_HEIGHT;
-    /* Only the unfiltered mode: the filtered ones already average across the
-     * seams, and snapping there would just add positional jitter. */
-    view->snapPixels = Port_Config_Get3DSDisplayStyle() == PORT_3DS_DISPLAY_SHARP;
     view->affine = virtuappu_registers.mode == 2;
     view->ioUniform = virtuappu_mode1_pre_line_callback == NULL;
     /* Remembered for the quick dump: by the time it runs the HDMA channels

@@ -6,7 +6,6 @@
 #define Arm11FastMemcpy(d, s, n) memcpy((d), (s), (n))
 #endif
 
-#include <math.h>
 #include <string.h>
 
 /* Phase timing, compiled only into the host benchmark (PPU_GPU3DS_PROFILE).
@@ -896,11 +895,6 @@ static bool tile_sample_uv(PpuGpu3DSCache* cache, const uint8_t* vram,
     return true;
 }
 
-/* See PpuGpu3DSFrameView::snapPixels. */
-static float snap_edge(const PpuGpu3DSFrameView* frame, float value) {
-    return frame->snapPixels ? floorf(value + 0.5f) : value;
-}
-
 static void emit_sample_quad(const PpuGpu3DSFrameView* frame,
                              PpuGpu3DSCommandBuffer* cmd, bool emit,
                              float left, float top, float right, float bottom,
@@ -909,14 +903,10 @@ static void emit_sample_quad(const PpuGpu3DSFrameView* frame,
     if (emit && quad_room(cmd, vertexCursor, indexCursor)) {
         const float invWidth = 2.0f / (float)frame->width;
         const float invHeight = 2.0f / (float)frame->height;
-        const float sl = snap_edge(frame, left);
-        const float sr = snap_edge(frame, right);
-        const float st = snap_edge(frame, top);
-        const float sb = snap_edge(frame, bottom);
-        const float x0 = sl * invWidth - 1.0f;
-        const float x1 = sr * invWidth - 1.0f;
-        const float y0 = 1.0f - st * invHeight;
-        const float y1 = 1.0f - sb * invHeight;
+        const float x0 = left * invWidth - 1.0f;
+        const float x1 = right * invWidth - 1.0f;
+        const float y0 = 1.0f - top * invHeight;
+        const float y1 = 1.0f - bottom * invHeight;
         const int16_t pu = PpuGpu3DS_PackUV(u);
         const int16_t pv = PpuGpu3DS_PackUV(v);
         cmd->vertices[*vertexCursor + 0] =
@@ -941,14 +931,10 @@ static void emit_uv_quad(const PpuGpu3DSFrameView* frame,
     if (emit && quad_room(cmd, vertexCursor, indexCursor)) {
         const float invWidth = 2.0f / (float)frame->width;
         const float invHeight = 2.0f / (float)frame->height;
-        const float sl = snap_edge(frame, left);
-        const float sr = snap_edge(frame, right);
-        const float st = snap_edge(frame, top);
-        const float sb = snap_edge(frame, bottom);
-        const float x0 = sl * invWidth - 1.0f;
-        const float x1 = sr * invWidth - 1.0f;
-        const float y0 = 1.0f - st * invHeight;
-        const float y1 = 1.0f - sb * invHeight;
+        const float x0 = left * invWidth - 1.0f;
+        const float x1 = right * invWidth - 1.0f;
+        const float y0 = 1.0f - top * invHeight;
+        const float y1 = 1.0f - bottom * invHeight;
         const int16_t pu0 = PpuGpu3DS_PackUV(u0);
         const int16_t pu1 = PpuGpu3DS_PackUV(u1);
         const int16_t pv0 = PpuGpu3DS_PackUV(v0);
