@@ -154,9 +154,12 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
-          # Published verbatim: the on-device changelog view starts at the
-          # file's own "## Changelog" heading, which must stay ASCII-only.
-          cp CHANGELOG-cn.md release-notes.md
+          # Only this version's section: the full CHANGELOG-cn.md stays in the
+          # repo and feeds the on-device viewer, but a release must describe the
+          # version it publishes, not the whole history.
+          python3 scripts/dev/extract_release_notes.py CHANGELOG-cn.md "${VERSION}" \
+            > release-notes.md
+          test -s release-notes.md
           echo "TMCPORTVERSION=${VERSION}" >> "${GITHUB_ENV}"
 
       - name: Create release
