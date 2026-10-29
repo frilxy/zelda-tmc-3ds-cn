@@ -9,7 +9,7 @@
 #define CONFIG_3DS_DEFAULT_DISPLAY PORT_3DS_DISPLAY_BILINEAR
 
 _Static_assert(PORT_3DS_DISPLAY_BLUR == 0 && PORT_3DS_DISPLAY_BILINEAR == 1 &&
-                   PORT_3DS_DISPLAY_PIXEL_PERFECT == 2,
+                   PORT_3DS_DISPLAY_PIXEL_PERFECT == 2 && PORT_3DS_DISPLAY_SHARP == 3,
                "3DS display styles must follow the Settings menu order");
 
 static inline const char* ConfigValues3DS_AspectName(Port3DSAspectRatio mode) {
@@ -38,6 +38,7 @@ static inline const char* ConfigValues3DS_DisplayName(Port3DSDisplayStyle style)
         [PORT_3DS_DISPLAY_BLUR] = "blur",
         [PORT_3DS_DISPLAY_BILINEAR] = "bilinear",
         [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "pixel-perfect",
+        [PORT_3DS_DISPLAY_SHARP] = "sharp",
     };
     return style >= 0 && style < PORT_3DS_DISPLAY_COUNT ? names[style]
                                                         : names[CONFIG_3DS_DEFAULT_DISPLAY];
@@ -48,6 +49,7 @@ static inline const char* ConfigValues3DS_DisplayLabel(Port3DSDisplayStyle style
         [PORT_3DS_DISPLAY_BLUR] = "模糊",
         [PORT_3DS_DISPLAY_BILINEAR] = "双线性",
         [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "完美像素",
+        [PORT_3DS_DISPLAY_SHARP] = "锐利像素",
     };
     return style >= 0 && style < PORT_3DS_DISPLAY_COUNT ? names[style]
                                                         : names[CONFIG_3DS_DEFAULT_DISPLAY];
@@ -55,10 +57,11 @@ static inline const char* ConfigValues3DS_DisplayLabel(Port3DSDisplayStyle style
 
 static inline Port3DSDisplayStyle ConfigValues3DS_ParseDisplay(const char* value) {
     if (value != NULL) {
-        /* E9 exposed this fourth style. E10 deliberately folds existing
-         * ultra-sharp preferences into the one supported filtered mode. */
+        /* The old "ultra-sharp" token predates this style. Now that a real
+         * nearest-neighbour full-screen mode exists, an existing preference
+         * for maximum sharpness lands on it instead of on the filtered one. */
         if (strcmp(value, "ultra-sharp") == 0)
-            return PORT_3DS_DISPLAY_BILINEAR;
+            return PORT_3DS_DISPLAY_SHARP;
         for (int i = 0; i < PORT_3DS_DISPLAY_COUNT; ++i) {
             if (strcmp(value, ConfigValues3DS_DisplayName((Port3DSDisplayStyle)i)) == 0) {
                 return (Port3DSDisplayStyle)i;

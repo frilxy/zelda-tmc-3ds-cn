@@ -6,7 +6,7 @@
 int main(void) {
     const int widths[] = { 240, 256, 266, 400 };
     for (int aspect = 0; aspect < 3; ++aspect) {
-        for (int style = 0; style < 3; ++style) {
+        for (int style = 0; style <= TOP_VIEW_3DS_DISPLAY_SHARP; ++style) {
             for (unsigned w = 0; w < sizeof(widths) / sizeof(widths[0]); ++w) {
                 TopView3DSPlan plan;
                 TopView3DS_BuildPlan(aspect, style, widths[w], &plan);
@@ -32,6 +32,6 @@ int main(void) {
             }
         }
     }
-    puts("top_view_3ds_test: 36 aspect/filter/source combinations PASS");
+    puts("top_view_3ds_test: aspect/filter/source combinations PASS");
     return 0;
 }
