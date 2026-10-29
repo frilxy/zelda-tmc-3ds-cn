@@ -188,10 +188,53 @@ def emit(face_key, cells, adv, glyphs, ink_top, ink_bottom, size, bold, out):
     out.append("")
 
 
+def header_cells(path, prefix):
+    """Codepoints recorded in an already-generated atlas, without touching
+    Pillow. Comparing just the character set is enough to catch the class of
+    bug this exists for: a label gained characters and nobody regenerated the
+    atlas, so the compositor silently skipped the glyphs it had no cell for."""
+    import re
+    text = open(path, encoding="utf-8").read()
+    match = re.search(r"static const uint32_t " + prefix + r"Cell\[[^\]]*\] = \{(.*?)\};",
+                      text, re.S)
+    if match is None:
+        return None
+    return [int(value, 16) for value in re.findall(r"0x([0-9A-Fa-f]{4})u", match.group(1))]
+
+
+def check_charset_only():
+    chars = used_chars()
+    if not os.path.exists(OUT_HEADER):
+        print("atlas header is missing; run gen_cn_font.py")
+        return 1
+    expected = [ord(ch) for ch in chars]
+    for prefix, label in (("kTmcCn", "body"), ("kTmcCnLarge", "large")):
+        recorded = header_cells(OUT_HEADER, prefix)
+        if recorded is None:
+            print(f"could not read the {label} cell table from {OUT_HEADER}")
+            return 1
+        if recorded != expected:
+            missing = [chr(c) for c in expected if c not in recorded]
+            extra = [chr(c) for c in recorded if c not in expected]
+            print(f"{label} atlas is stale: {len(recorded)} cells vs {len(expected)} expected")
+            if missing:
+                print("  missing: " + " ".join(f"{ch}(U+{ord(ch):04X})" for ch in missing[:40]))
+            if extra:
+                print("  extra:   " + " ".join(extra[:40]))
+            return 1
+    print(f"atlas charset OK ({len(expected)} cells per face)")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true")
+    ap.add_argument("--check-charset", action="store_true",
+                    help="compare only the character set (no Pillow needed)")
     args = ap.parse_args()
+
+    if args.check_charset:
+        return check_charset_only()
 
     chars = used_chars()
     if not chars:
