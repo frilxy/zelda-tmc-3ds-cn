@@ -256,6 +256,11 @@ typedef enum {
     PORT_3DS_DISPLAY_BLUR = 0,
     PORT_3DS_DISPLAY_BILINEAR,
     PORT_3DS_DISPLAY_PIXEL_PERFECT,
+    /* Full-screen nearest neighbour: the whole 240x160 field fills the panel
+     * with no interpolation. Pixels land on uneven column widths because the
+     * scale is 5:3, but every edge stays hard -- the sharpest mode that still
+     * uses the full screen. */
+    PORT_3DS_DISPLAY_SHARP,
     PORT_3DS_DISPLAY_COUNT,
 } Port3DSDisplayStyle;
 
