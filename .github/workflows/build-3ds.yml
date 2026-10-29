@@ -76,6 +76,15 @@ jobs:
       - name: Verify release notes are updater-safe
         run: python3 scripts/dev/check_release_notes.py CHANGELOG-cn.md
 
+      # A label that is not in the atlas renders as nothing: the compositor
+      # simply skips glyphs it has no cell for, so "锐利像素" showed up as
+      # "像素" with no error anywhere. Gate the generated atlas on every build.
+      # Pillow-free on purpose: the runner has no pip. Comparing the recorded
+      # codepoints is what catches a label whose new characters never made it
+      # into the atlas -- the compositor skips those glyphs without an error.
+      - name: Verify Chinese font atlas is current
+        run: python3 scripts/dev/gen_cn_font.py --check-charset
+
       - name: Upload JP packages
         uses: actions/upload-artifact@v7
         with:
