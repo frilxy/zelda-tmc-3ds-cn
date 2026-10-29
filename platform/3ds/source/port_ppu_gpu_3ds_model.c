@@ -935,10 +935,18 @@ static void emit_uv_quad(const PpuGpu3DSFrameView* frame,
         const float x1 = right * invWidth - 1.0f;
         const float y0 = 1.0f - top * invHeight;
         const float y1 = 1.0f - bottom * invHeight;
-        const int16_t pu0 = PpuGpu3DS_PackUV(u0);
-        const int16_t pu1 = PpuGpu3DS_PackUV(u1);
-        const int16_t pv0 = PpuGpu3DS_PackUV(v0);
-        const int16_t pv1 = PpuGpu3DS_PackUV(v1);
+        /* Pull the sample window a quarter texel inside the tile. The quad is
+         * scaled 1.5x, so its outermost sample lands within rounding distance
+         * of the tile edge and can pick the neighbouring slot's texel -- a
+         * stray bright pixel inside a one-pixel black outline. A quarter texel
+         * is invisible at 1.5x and removes the bleed. */
+        const float uvInset = 0.25f / (float)PPU_GPU3DS_ATLAS_SIDE;
+        const float tu0 = u0 + uvInset, tv0 = v0 + uvInset;
+        const float tu1 = u1 - uvInset, tv1 = v1 - uvInset;
+        const int16_t pu0 = PpuGpu3DS_PackUV(tu0);
+        const int16_t pu1 = PpuGpu3DS_PackUV(tu1);
+        const int16_t pv0 = PpuGpu3DS_PackUV(tv0);
+        const int16_t pv1 = PpuGpu3DS_PackUV(tv1);
         cmd->vertices[*vertexCursor + 0] =
                 (PpuGpu3DSVertex){ x0, y0, z, pu0, pv0 };
         cmd->vertices[*vertexCursor + 1] =
