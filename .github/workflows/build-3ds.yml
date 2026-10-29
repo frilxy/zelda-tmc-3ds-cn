@@ -81,7 +81,12 @@ jobs:
       # "像素" with no error anywhere. Gate the generated atlas on every build.
       - name: Verify Chinese font atlas is current
         run: |
-          python3 -m pip install --quiet --disable-pip-version-check pillow
+          if ! python3 -c "import PIL" 2>/dev/null; then
+            python3 -m ensurepip --user >/dev/null 2>&1 || true
+            timeout 180 python3 -m pip install --user --quiet --disable-pip-version-check pillow \
+              || timeout 180 pip3 install --user --quiet pillow \
+              || echo "pillow unavailable; the atlas check below will say so"
+          fi
           python3 scripts/dev/gen_cn_font.py --check
 
       - name: Upload JP packages
