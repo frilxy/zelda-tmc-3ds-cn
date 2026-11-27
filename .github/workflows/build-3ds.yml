@@ -130,9 +130,14 @@ jobs:
           (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" > SHA256SUMS.txt)
 
           python3 -m pip install --disable-pip-version-check --quiet --target "${RUNNER_TEMP}/qr-python" segno==1.6.6
-          PYTHONPATH="${RUNNER_TEMP}/qr-python" python3 -m segno --error M --scale 10 --border 4 \
-            --output "dist/QR-${TAG}-github.png" \
-            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
+          PYTHONPATH="${RUNNER_TEMP}/qr-python" python3 - \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia" \
+            "dist/QR-${TAG}-github.png" <<'PYTHON'
+          import sys
+          import segno
+
+          segno.make(sys.argv[1], error="m").save(sys.argv[2], scale=10, border=4)
+          PYTHON
 
       - name: Write release notes
         run: |
