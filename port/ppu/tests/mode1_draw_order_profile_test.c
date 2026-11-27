@@ -6,8 +6,9 @@
  * hardware rules involved in the report:
  *
  *   1. BG/OBJ: lower numeric priority wins; OBJ wins an equal-priority tie.
- *   2. OBJ/OBJ: the lowest OAM index wins before that OBJ competes with BGs,
- *      regardless of the two sprites' attr2 priority values.
+ *   2. OBJ/OBJ: the lower attr2 priority number wins, then the lower OAM
+ *      index (mGBA's model; the GBA shows the Crenel paths' twig, priority 1,
+ *      over Link, priority 2, though Link is earlier in OAM).
  */
 
 #include "cpu/mode1.h"
@@ -150,15 +151,21 @@ static int CheckOamIndexPrecedence(PPUMemory* ppu) {
     virtuappu_mode1_render_frame(ppu);
     lowIndexColor = virtuappu_frame_buffer[Y * MODE1_GBA_WIDTH + X];
 
-    /* OAM[1] overlaps it with attr2 priority 0. Retail first resolves OBJ/OBJ
-     * by OAM index, so OAM[0] must remain the winning pixel. */
+    /* OAM[1] overlaps it at the same priority: the lower index stays in front. */
     sOam[4] = Y;
     sOam[5] = X;
-    sOam[6] = (uint16_t)(1u | (0u << 10u));
+    sOam[6] = (uint16_t)(1u | (2u << 10u));
     virtuappu_mode1_render_frame(ppu);
     if (virtuappu_frame_buffer[Y * MODE1_GBA_WIDTH + X] != lowIndexColor) {
-        fprintf(stderr,
-                "mode1_draw_order_profile_test: higher OAM index incorrectly replaced lower index\n");
+        fprintf(stderr, "mode1_draw_order_profile_test: equal priority, higher OAM index replaced lower index\n");
+        return 0;
+    }
+
+    /* With attr2 priority 0 OAM[1] wins, though it is later in OAM. */
+    sOam[6] = (uint16_t)(1u | (0u << 10u));
+    virtuappu_mode1_render_frame(ppu);
+    if (virtuappu_frame_buffer[Y * MODE1_GBA_WIDTH + X] == lowIndexColor) {
+        fprintf(stderr, "mode1_draw_order_profile_test: lower priority number lost to a lower OAM index\n");
         return 0;
     }
 
@@ -189,6 +196,6 @@ int main(void) {
         return 1;
     }
 
-    puts("mode1_draw_order_profile_test: PASS (canopy BG/OBJ + lower-index OAM retail rules)");
+    puts("mode1_draw_order_profile_test: PASS (canopy BG/OBJ + OBJ priority, then OAM index)");
     return 0;
 }

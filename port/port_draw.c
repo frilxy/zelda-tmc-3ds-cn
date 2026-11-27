@@ -16,6 +16,7 @@
 
 #include "color.h"
 #include "entity.h"
+#include "enemy.h"
 #include "global.h"
 #include "main.h"
 #include "room.h"
@@ -23,11 +24,15 @@
 #include "sound.h"
 #include "structures.h"
 #include "vram.h"
+#include "object.h"
+#include "npc.h"
+#include "player.h"
 
 #include "port_widescreen.h"
 #include "port_rom.h"
 #include "cpu/mode1.h"
 
+extern int Port_Config_GetStereoWorld(void); /* 3D WORLD on (stereo_world_on); only the 3DS build defines it */
 #include <setjmp.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,6 +43,133 @@ static void RenderSpritePieces(const u8* data, s16 baseX, s16 baseY, u32 flags, 
 
 /* Set true only while rendering the player; drives the swamp-sink body clip. */
 static int sRenderingPlayer = 0;
+/* The stereo 3D depth of what is being rendered, quarter pixels (virtuappu_mode1_obj_depth, docs/stereo-3d.md):
+ * what Link holds up or has just thrown stands out of the screen. */
+static u8 sRenderingDepth = 0;
+/* Set while an entity's pieces are written: the upper pieces of a tall sprite stand out a little (Port_Config_StereoBodyDepthQ),
+ * the lowest stays on the ground's plane, so it leans out instead of floating. */
+static int sRenderingBody = 0;
+/* The pieces of an entity drawn in several calls (a carpenter: body, head, tool) lean as one: JoinMeasureParts measures the box
+ * of all the parts first (sJoinMeasure), then each part leans from it (sJoinKnown). */
+static int sJoinMeasure = 0, sJoinKnown = 0;
+static s32 sJoinFeet, sJoinTop, sJoinLeft, sJoinRight;
+/* The entity whose pieces are being written (1..127, 0 outside one): its OAM entries are tagged with it. Its shadow, drawn
+ * in the deferred pass, is tagged with it plus SPRITE_SUPPORT_3DS_SHADOW (platform/3ds/source/sprite_support_3ds.h): the
+ * GPU model gives a shadow the support of the surface under it, never its entity's height. sLastGroup is the entity drawn
+ * last, whose shadow ProcessEntityForDrawNative defers. */
+#include "../platform/3ds/source/sprite_support_3ds.h"
+static u8 sRenderingGroup = 0;
+static u8 sLastGroup = 0;
+/* The big Chuchu is three entities stacked 14-18 px apart, each with its own feet: measured from those, the depth would
+ * start again at 0 in every part. Its ground is the lowest bottom edge among its pieces (the shadow's), taken from the
+ * frame before (the draw order of the parts is not known) and refreshed as they are drawn. */
+static int sRenderingBoss = 0;
+static s32 sBossGround = -0x7fffffff, sBossGroundNext = -0x7fffffff;
+static s32 sBossTop = 0x7fffffff, sBossTopNext = 0x7fffffff; /* and its highest top edge, the same way */
+
+#ifdef TMC_3DS
+/* Per-entity corrections of the stereo depth, hand-curated (platform/3ds/source/port_sprite_depth.inc, optional):
+ *   PORT_SPRITE_DEPTH(kind, id, type, mode)   kind: ENEMY, OBJECT...; id: the kind's own id (BOSS_DOOR...);
+ *                                             type: the entity's type or PORT_ANY_TYPE
+ *   PORT_DEPTH_UP:     the normal rule (what an entity without an entry gets): the ground is the bottom of its
+ *                      pieces and the depth rises upwards
+ *   PORT_DEPTH_DOWN or PORT_DEPTH_INVERT: the sprite hangs from the top edge (a door in a south wall): the ground is
+ *                      the top of its pieces and the depth rises downwards
+ *   PORT_DEPTH_LEFT:   the sprite hangs on a wall to its left (a curtain on a west wall): the ground is the right edge of
+ *                      its pieces and the depth rises towards the left of the screen
+ *   PORT_DEPTH_RIGHT:  the mirror (a wall to its right): ground at the left edge, the depth rising towards the right
+ *   PORT_DEPTH_FLAT:   no lean at all
+ *   PORT_DEPTH_WALL:   picked from where the entity stands in its room: within PORT_WALL_MARGIN pixels of the left, right or
+ *                      bottom edge it is LEFT, RIGHT or DOWN (the nearest edge wins), anywhere else UP. For door-like
+ *                      sprites that sit in a wall whichever way they face
+ *   PORT_DEPTH_FIXED(n): no lean, the whole sprite at n quarter pixels (0..20) over the entity's own depth: for sprites that
+ *                      must sit on a surface whose height is known (the boots and hands of a craftsman on his table)
+ *   PORT_DEPTH_RAISED: no lean, the whole sprite at one raised depth: what the normal rule gives its top edge (the
+ *                      entity's own depth plus Port_Config_StereoBodyDepthQ of its whole height, feet to the top of
+ *                      its highest piece; 20 quarters at most)
+ * A side lean is written as the depth at each piece's right edge (virtuappu_mode1_obj_depth) and at its left edge
+ * (virtuappu_mode1_obj_depth_top, with SPRITE_LEAN_3DS_COLUMNS set, and SPRITE_LEAN_3DS_RISES_RIGHT for
+ * PORT_DEPTH_RIGHT, on every piece of the sprite): the GPU model spreads it over the tile columns. */
+enum {
+    PORT_DEPTH_UP = 0, PORT_DEPTH_INVERT = 1, PORT_DEPTH_DOWN = PORT_DEPTH_INVERT, PORT_DEPTH_FLAT = 2,
+    PORT_DEPTH_LEFT = 3, PORT_DEPTH_RIGHT = 4, PORT_DEPTH_RAISED = 5, PORT_DEPTH_WALL = 6, PORT_DEPTH_FIXED_BASE = 0x40, PORT_ANY_TYPE = 0xff
+};
+/* PORT_DEPTH_FIXED(n): the whole sprite at one explicit depth of n quarter pixels over the entity's own (its jump's), no lean. */
+#define PORT_DEPTH_FIXED(n) (PORT_DEPTH_FIXED_BASE | (n))
+/* The bits of the top depth that say the entry leans across its columns and which way (SPRITE_LEAN_3DS_COLUMNS,
+ * SPRITE_LEAN_3DS_RISES_RIGHT) and the raised depth (SpriteLean3DS_RaisedDepth). */
+#include "../platform/3ds/source/sprite_lean_3ds.h"
+typedef struct { u8 kind, id, type, mode; } PortSpriteDepthFix;
+#if defined(__has_include)
+#if __has_include("../platform/3ds/source/port_sprite_depth.inc")
+#define PORT_SPRITE_DEPTH(kind, id, type, mode) { (u8)(kind), (u8)(id), (u8)(type), (u8)(mode) },
+#define PORT_PART_FLAT(kind, id, part)
+static const PortSpriteDepthFix sSpriteDepthFixes[] = {
+#include "../platform/3ds/source/port_sprite_depth.inc"
+};
+#undef PORT_SPRITE_DEPTH
+#undef PORT_PART_FLAT
+#define PORT_SPRITE_FIXES ((int)(sizeof(sSpriteDepthFixes) / sizeof(sSpriteDepthFixes[0])))
+/* PORT_PART_FLAT(kind, id, part): one part of an entity drawn as several (gUnk_020000C0, `part` 0-3) stays flat, with no
+ * lean, and does not count in the box the other parts lean from (a carpenter's plank lies on the ground). */
+typedef struct { u8 kind, id, part; } PortPartFlatFix;
+#define PORT_SPRITE_DEPTH(kind, id, type, mode)
+#define PORT_PART_FLAT(kind, id, part) { (u8)(kind), (u8)(id), (u8)(part) },
+static const PortPartFlatFix sPartFlats[] = {
+#include "../platform/3ds/source/port_sprite_depth.inc"
+};
+#undef PORT_SPRITE_DEPTH
+#undef PORT_PART_FLAT
+#define PORT_PART_FLATS ((int)(sizeof(sPartFlats) / sizeof(sPartFlats[0])))
+#endif
+#endif
+#ifndef PORT_SPRITE_FIXES
+typedef struct { u8 kind, id, part; } PortPartFlatFix;
+static const PortSpriteDepthFix sSpriteDepthFixes[1];
+static const PortPartFlatFix sPartFlats[1];
+#define PORT_SPRITE_FIXES 0
+#define PORT_PART_FLATS 0
+#endif
+static int sRenderingInvert = 0, sRenderingFlat = 0;
+static int sRenderingSide = 0; /* PORT_DEPTH_LEFT or PORT_DEPTH_RIGHT: the depth rises across the sprite, not up or down */
+static int sRenderingFixedQ = -1; /* PORT_DEPTH_FIXED(n): n quarters over the entity's own depth, -1 when off */
+static int sRenderingRaised = 0; /* PORT_DEPTH_RAISED: one depth for the whole sprite, its top edge's */
+/* PORT_DEPTH_WALL: the wall the entity stands in, from its place in the room (the nearest of the left, right and bottom
+ * edges within PORT_WALL_MARGIN pixels; the top edge keeps the normal rule). */
+enum { PORT_WALL_MARGIN = 24 };
+static int WallDepthMode(const Entity* entity) {
+    const int x = entity->x.HALF.HI - gRoomControls.origin_x, y = entity->y.HALF.HI - gRoomControls.origin_y;
+    const int left = x, right = gRoomControls.width - x, bottom = gRoomControls.height - y;
+    int best = PORT_WALL_MARGIN + 1, mode = PORT_DEPTH_UP;
+    if (left >= 0 && left < best) { best = left; mode = PORT_DEPTH_LEFT; }
+    if (right >= 0 && right < best) { best = right; mode = PORT_DEPTH_RIGHT; }
+    if (bottom >= 0 && bottom < best) { best = bottom; mode = PORT_DEPTH_DOWN; }
+    return mode;
+}
+
+static int PartIsFlat(const Entity* entity, int part) {
+    for (int i = 0; i < PORT_PART_FLATS; ++i)
+        if (sPartFlats[i].kind == entity->kind && sPartFlats[i].id == entity->id && sPartFlats[i].part == part) return 1;
+    return 0;
+}
+
+static int SpriteDepthMode(const Entity* entity) {
+    for (int i = 0; i < PORT_SPRITE_FIXES; ++i) {
+        const PortSpriteDepthFix* f = &sSpriteDepthFixes[i];
+        if (f->kind == entity->kind && f->id == entity->id && (f->type == PORT_ANY_TYPE || f->type == entity->type))
+            return f->mode == PORT_DEPTH_WALL ? WallDepthMode(entity) : f->mode;
+    }
+    return 0;
+}
+#endif
+
+/* The file select drawn at 400x240 (Port_Widescreen_FileSelectWide): the game keeps placing its
+ * sprites on the GBA's 240x160 screen; each drawn thing (an entity, a DrawDirect) is moved into
+ * the middle of the view as one, after its pieces are written (WideSpritesEnd). Its pieces are
+ * kept unclipped meanwhile, with their positions here. */
+static int sWideCollect;
+static s16 sWidePieceX[0x80], sWidePieceY[0x80];
+static u8 sWidePieceW[0x80], sWidePieceH[0x80];
 extern PlayerState gPlayerState;
 /* Region-select a ROM offset by the loaded ROM's game code (defined below). */
 static u32 RegionRomOffset(u32 usa, u32 eu, u32 jp);
@@ -363,6 +495,39 @@ static const u8* LookupFrameData(u16 spriteIndex, u8 frameIndex) {
  *     byte 3: tile index low byte
  *     byte 4: tile index high / palette addend
  */
+#ifdef TMC_3DS
+/* The box a sprite's pieces cover: the bottom edge of the lowest (its feet), the top edge of the highest, the left and right
+ * edges (for a side lean). Extends what is in the out parameters. */
+static void ScanPieceBox(const u8* data, u8 count, u32 flags, s16 baseX, s16 baseY, const u8* sizeTab, u32 tableOff,
+                         s32* feetBottom, s32* topMin, s32* leftMin, s32* rightMax) {
+    const u8* scan = data;
+    for (int i = 0; i < count; i++, scan += 5) {
+        s8 scanYoff = (s8)scan[1];
+        if (!(flags & 0x300) && (flags & 0x20000000))
+            scanYoff = -scanYoff;
+        const u32 scanSize = (scan[2] & 0xF0) >> 2;
+        if ((size_t)tableOff + scanSize + 3 >= sizeof(sSizeTable))
+            continue;
+        const u8* scanEntry = sizeTab + scanSize;
+        const s32 bottom = (s32)scanYoff + (s32)baseY - (s32)scanEntry[1] + (s32)scanEntry[3];
+        s8 scanXoff = (s8)scan[0];
+        if (!(flags & 0x300) && (flags & 0x10000000))
+            scanXoff = -scanXoff;
+        const s32 left = (s32)scanXoff + (s32)baseX - (s32)scanEntry[0];
+        if (left < *leftMin)
+            *leftMin = left;
+        if (left + (s32)scanEntry[2] > *rightMax)
+            *rightMax = left + (s32)scanEntry[2];
+        if (bottom > *feetBottom)
+            *feetBottom = bottom;
+        if (bottom - (s32)scanEntry[3] < *topMin)
+            *topMin = bottom - (s32)scanEntry[3];
+        if (sRenderingBoss && bottom - (s32)scanEntry[3] < sBossTopNext)
+            sBossTopNext = bottom - (s32)scanEntry[3];
+    }
+}
+#endif
+
 static void RenderSpritePieces(const u8* data, /* pointer to frame data (count byte + pieces) */
                                s16 baseX,      /* OAMCommand.x */
                                s16 baseY,      /* OAMCommand.y */
@@ -406,6 +571,13 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
         tableOff = v + (v << 1); /* v * 3 */
     }
     const u8* sizeTab = &sSizeTable[tableOff];
+#ifdef TMC_3DS
+    if (sJoinMeasure) {
+        if (!sRenderingFlat)
+            ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &sJoinFeet, &sJoinTop, &sJoinLeft, &sJoinRight);
+        return;
+    }
+#endif
 
     u8 updated = gOAMControls.updated;
 
@@ -418,8 +590,15 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
      * first emitted sprite has updated==0, since FlushSprites zeroes it). */
     extern PlayerEntity gPlayerEntity;
     if (updated == 0) {
+        sBossGround = sBossGroundNext;
+        sBossGroundNext = -0x7fffffff;
+        sBossTop = sBossTopNext;
+        sBossTopNext = 0x7fffffff;
         memset(virtuappu_mode1_obj_clip_mark_staged, 0, MODE1_GBA_OAM_COUNT);
         memset(virtuappu_mode1_obj_y_negative_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_depth_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_depth_top_staged, 0, MODE1_GBA_OAM_COUNT);
+        memset(virtuappu_mode1_obj_group_staged, 0, MODE1_GBA_OAM_COUNT);
         virtuappu_mode1_obj_clip_enable_staged = 0;
     }
     int sSwampClipActive = (sRenderingPlayer && gPlayerState.floor_type == SURFACE_SWAMP &&
@@ -436,6 +615,40 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
     /* OAM entries start at offset 0x20 in OAMControls, each 8 bytes */
     u8* oamBase = (u8*)&gOAMControls.oam[0];
     u8* ip = oamBase + updated * 8;
+
+#ifdef TMC_3DS
+    /* The bottom edge of the lowest piece: the sprite's feet. */
+    extern int Port_Config_StereoBodyDepthQ(int height);
+    /* A sprite of several pieces leans out with its height over its feet; so does a single tall piece (the big Chuchu is
+     * one 64 px piece per part): see the per-piece test below. */
+    const int bodyShear = sRenderingBody && !sRenderingFlat;
+    s32 feetBottom = -0x7fffffff;
+    s32 topMin = 0x7fffffff; /* the highest top edge of its pieces: the ground of a sprite that hangs (PORT_DEPTH_INVERT) */
+    /* Its left and right edges: the ground of a sprite on a side wall (PORT_DEPTH_RIGHT, PORT_DEPTH_LEFT). */
+    s32 leftMin = 0x7fffffff, rightMax = -0x7fffffff;
+    if (bodyShear) {
+        ScanPieceBox(data, count, flags, baseX, baseY, sizeTab, tableOff, &feetBottom, &topMin, &leftMin, &rightMax);
+        if (sJoinKnown) {
+            /* A part of an entity of several: the lean is the whole entity's (JoinMeasureParts). */
+            feetBottom = sJoinFeet;
+            topMin = sJoinTop;
+            leftMin = sJoinLeft;
+            rightMax = sJoinRight;
+        }
+        if (sRenderingBoss) {
+            if (feetBottom > sBossGroundNext)
+                sBossGroundNext = feetBottom;
+            if (sBossGround > feetBottom)
+                feetBottom = sBossGround;
+        }
+    }
+    /* PORT_DEPTH_RAISED: what the normal rule gives the sprite's top edge (its whole height over its feet), for all of
+     * it, whether or not the normal rule would lean it (it does not lean one piece 16 px tall or less). */
+    const u8 raisedQ = (u8)SpriteLean3DS_RaisedDepth(
+        (int)sRenderingDepth,
+        sRenderingFixedQ >= 0 ? sRenderingFixedQ
+        : bodyShear && sRenderingRaised && feetBottom > topMin ? Port_Config_StereoBodyDepthQ((int)(feetBottom - topMin)) : 0);
+#endif
 
     for (int i = 0; i < count; i++) {
         if (updated >= 0x80) {
@@ -472,19 +685,73 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
 
         /* Clipping */
         y -= (s32)se[1]; /* subtract y anchor */
-        if (y >= Port_Widescreen_ProducerViewHeight()) {
-            continue;
+        u8 pieceDepth = sRenderingDepth;
+        u8 pieceDepthTop = sRenderingDepth;
+#ifdef TMC_3DS
+        u8 pieceColumns = 0;
+        if (bodyShear && (sRenderingRaised || sRenderingFixedQ >= 0)) {
+            pieceDepth = pieceDepthTop = raisedQ;
+        } else if (bodyShear && sRenderingSide) {
+            /* On a side wall: the same rise as the normal rule, measured from the edge it hangs on across the sprite's
+             * width (in the GPU renderer, column by column of tiles). The depth at the piece's right edge goes in the
+             * entry's depth, the one at its left edge in its top depth. */
+            const s32 left = x - (s32)se[0], right = left + (s32)se[2];
+            const s32 fromLeft = sRenderingSide == PORT_DEPTH_RIGHT ? left - leftMin : rightMax - right;
+            const int near = (int)(fromLeft > 0 ? fromLeft : 0); /* the piece's edge nearer the ground */
+            const int nearQ = Port_Config_StereoBodyDepthQ(near), farQ = Port_Config_StereoBodyDepthQ(near + (int)se[2]);
+            const int sumRight = (int)sRenderingDepth + (sRenderingSide == PORT_DEPTH_RIGHT ? farQ : nearQ);
+            const int sumLeft = (int)sRenderingDepth + (sRenderingSide == PORT_DEPTH_RIGHT ? nearQ : farQ);
+            pieceDepth = (u8)(sumRight > 20 ? 20 : sumRight);
+            pieceDepthTop = (u8)(sumLeft > 20 ? 20 : sumLeft);
+            /* On every piece, even one whose edges have the same depth: the renderer splits the shifts of all the pieces
+             * of the sprite between the eyes the same way, so neighbouring columns never part (SpriteLean3DS_EyeShift). */
+            pieceColumns = (u8)(SPRITE_LEAN_3DS_COLUMNS | (sRenderingSide == PORT_DEPTH_RIGHT ? SPRITE_LEAN_3DS_RISES_RIGHT : 0));
+        } else if (bodyShear && (count > 1 || se[3] > 16 || sRenderingInvert || sJoinKnown)) {
+            /* The depth rises with the height over the feet: at the piece's bottom edge, and at its top edge, so the
+             * GPU renderer can give each tile row of the piece its own (the lean is then not one step per piece). */
+            const s32 above = feetBottom - (y + (s32)se[3]); /* how far this piece's bottom is over the feet */
+            /* The big Chuchu spreads the same rise over its whole height (ground to the top of its head). */
+            const s32 bossHeight = sRenderingBoss && sBossGround > sBossTop ? sBossGround - sBossTop : 0;
+            const int aboveBottom = (int)(above > 0 ? above : 0), aboveTop = aboveBottom + (int)se[3];
+            const int bottomQ = above <= 0 ? 0
+                                : bossHeight > 16 ? (int)(aboveBottom * 16 / bossHeight > 16 ? 16 : aboveBottom * 16 / bossHeight)
+                                                  : Port_Config_StereoBodyDepthQ(aboveBottom);
+            /* The lowest piece of the boss is its shadow (a dark ellipse in a 64 px piece of its own): flat on the ground, so
+             * it stays at 0; otherwise it would be drawn in front of the feet that stand on it. */
+            const int topQ = sRenderingBoss && above <= 0 ? 0 : bossHeight > 16 ? (int)(aboveTop * 16 / bossHeight > 16 ? 16 : aboveTop * 16 / bossHeight)
+                                             : Port_Config_StereoBodyDepthQ(aboveTop);
+            int sumBottom = (int)sRenderingDepth + bottomQ, sumTop = (int)sRenderingDepth + topQ;
+            if (sRenderingInvert) {
+                /* Hanging from its top edge: the depth is nil there and grows downwards. */
+                const int belowTop = (int)(y - topMin > 0 ? y - topMin : 0);
+                sumBottom = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop + (int)se[3]);
+                sumTop = (int)sRenderingDepth + Port_Config_StereoBodyDepthQ(belowTop);
+            }
+            pieceDepth = (u8)(sumBottom > 20 ? 20 : sumBottom);
+            pieceDepthTop = (u8)(sumTop > 20 ? 20 : sumTop);
+            /* ...and it does not rise with the boss's jump either: its shadow stays where the ground is. */
+            if (sRenderingBoss && above <= 0) pieceDepth = pieceDepthTop = 0;
         }
-        if (y + (s32)se[3] <= 0) {
+#endif
+        if (sWideCollect) {
+            /* Placed and clipped by WideSpritesEnd. */
+            x -= (s32)se[0];
+            sWidePieceX[updated] = (s16)x;
+            sWidePieceY[updated] = (s16)y;
+            sWidePieceW[updated] = se[2];
+            sWidePieceH[updated] = se[3];
+        } else if (y >= Port_Widescreen_ProducerViewHeight()) {
             continue;
-        }
-
-        x -= (s32)se[0]; /* subtract x anchor */
-        if (x >= Port_Widescreen_ProducerViewWidth()) {
+        } else if (y + (s32)se[3] <= 0) {
             continue;
-        }
-        if (x + (s32)se[2] <= 0) {
-            continue;
+        } else {
+            x -= (s32)se[0]; /* subtract x anchor */
+            if (x >= Port_Widescreen_ProducerViewWidth()) {
+                continue;
+            }
+            if (x + (s32)se[2] <= 0) {
+                continue;
+            }
         }
 
         /* Build combined attr0|attr1 as 32-bit word (little-endian):
@@ -519,11 +786,197 @@ static void RenderSpritePieces(const u8* data, /* pointer to frame data (count b
          * clip in ViruaPPU (see RenderSpritePieces top + port_gba_mem). */
         if (sSwampClipActive)
             virtuappu_mode1_obj_clip_mark_staged[updated & 0x7F] = 1;
+        /* The HUD's sprites (priority 0) take no depth from their pieces' height: they keep the entity's own (none for a HUD element), and with it the
+         * layer's, which is in front of the world's whatever the world does. */
+        if (((attr2 >> 10) & 3u) == 0) {
+            pieceDepth = pieceDepthTop = sRenderingDepth;
+#ifdef TMC_3DS
+            pieceColumns = 0;
+#endif
+        }
+        /* Every piece of the big Chuchu is drawn with the layers in front (bit 7), moved or not: split between the base and
+         * the front, its parts would cover one another in the wrong order. */
+        virtuappu_mode1_obj_depth_staged[updated & 0x7F] = (u8)(pieceDepth | (sRenderingBoss && Port_Config_GetStereoWorld() ? 0x80 : 0));
+#ifdef TMC_3DS
+        virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = (u8)(pieceDepthTop | pieceColumns);
+#else
+        virtuappu_mode1_obj_depth_top_staged[updated & 0x7F] = pieceDepthTop;
+#endif
+        virtuappu_mode1_obj_group_staged[updated & 0x7F] = sRenderingGroup;
 
         updated++;
     }
 
     gOAMControls.updated = updated;
+}
+
+/* How far a thing spanning [lo, hi) on one axis of the GBA's screen (size `native`) is moved in a
+ * view `margin` larger on each side: by `margin` while it is all on the GBA's screen, and across
+ * the edge it is crossing faster, so that it leaves the view as it leaves the GBA's screen (the
+ * file rows the game parks at x = -72 leave by the 400x240 view's edge, not in its middle). The
+ * one-pixel sliver some leave on the GBA's edge (those rows' outline) is not carried over. */
+static s32 WideCarry(s32 lo, s32 hi, s32 native, s32 margin) {
+    const s32 size = hi - lo;
+    if (size <= 1 || (lo < 0 && hi > native)) return margin;
+    if (lo < 0) return hi <= 1 ? -hi : margin * (hi - 1) / (size - 1);
+    if (hi > native) return lo >= native - 1 ? native + 2 * margin - lo : margin + margin * (hi - native) / (size - 1);
+    return margin;
+}
+
+/* The pause menu's sprites (Port_Widescreen_PauseWide) move into the middle as they are: what the game slides
+ * past the GBA's screen (the L and R buttons when pressed) stays whole; what is wholly off it stays hidden. */
+static int sWidePause;
+/* Port_Draw_SetPauseHudBeside: the pause item page's A, B, X and Y are put where the game's HUD has them in the 400
+ * view, right of the GBA's screen and X above its top, so their pieces are kept wherever they fall in the view. */
+static int sPauseHudBeside;
+
+void Port_Draw_SetPauseHudBeside(int on) {
+    sPauseHudBeside = on != 0;
+}
+
+static int WideSpritesBegin(void) {
+    if (sWideCollect) return -1;
+    sWidePause = !Port_Widescreen_FileSelectWide() && Port_Widescreen_PauseWide();
+    if (!sWidePause && !Port_Widescreen_FileSelectWide()) return -1;
+    sWideCollect = 1;
+    return gOAMControls.updated;
+}
+
+int Port_Draw_WideGroupBegin(void) {
+    return WideSpritesBegin();
+}
+
+/* The pieces written since WideSpritesBegin, moved into the 400x240 view as one and clipped to it. */
+static void WideSpritesEnd(int first) {
+    if (first < 0) return;
+    sWideCollect = 0;
+    const int end = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
+    if (first >= end) return;
+    s32 left = 0x7fff, right = -0x8000, top = 0x7fff, bottom = -0x8000;
+    for (int i = first; i < end; i++) {
+        if (sWidePieceX[i] < left) left = sWidePieceX[i];
+        if (sWidePieceX[i] + sWidePieceW[i] > right) right = sWidePieceX[i] + sWidePieceW[i];
+        if (sWidePieceY[i] < top) top = sWidePieceY[i];
+        if (sWidePieceY[i] + sWidePieceH[i] > bottom) bottom = sWidePieceY[i] + sWidePieceH[i];
+    }
+    if (sWidePause && !sPauseHudBeside && (right <= 0 || left >= 240 || bottom <= 0 || top >= 160)) {
+        gOAMControls.updated = (u8)first;
+        return;
+    }
+    const s32 dx = sWidePause ? 80 : WideCarry(left, right, 240, 80);
+    const s32 dy = sWidePause ? 40 : WideCarry(top, bottom, 160, 40);
+    u8* oam = (u8*)&gOAMControls.oam[0];
+    int out = first;
+    for (int i = first; i < end; i++) {
+        const s32 x = sWidePieceX[i] + dx, y = sWidePieceY[i] + dy;
+        if (x >= 400 || x + sWidePieceW[i] <= 0 || y >= 240 || y + sWidePieceH[i] <= 0) continue;
+        /* attr0-attr2 only: the fourth halfword of each entry is an affine parameter. */
+        u16 attr[3];
+        memcpy(attr, oam + i * 8, sizeof(attr));
+        attr[0] = (u16)((attr[0] & ~0xFFu) | ((u32)y & 0xFFu));
+        attr[1] = (u16)((attr[1] & ~0x1FFu) | ((u32)x & 0x1FFu));
+        memcpy(oam + out * 8, attr, sizeof(attr));
+        virtuappu_mode1_obj_y_negative_staged[out] = y < 0;
+        virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[i];
+        virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[i];
+        virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[i];
+        virtuappu_mode1_obj_group_staged[out] = virtuappu_mode1_obj_group_staged[i];
+        out++;
+    }
+    gOAMControls.updated = (u8)out;
+}
+
+void Port_Draw_WideGroupEnd(int first) {
+    WideSpritesEnd(first);
+}
+
+/* The pause menu's title banner (INVENTORY, MAP...) at 400x240: two 64x32 sprites at the GBA screen's top-left whose
+ * graphic is cut flat on the left (the GBA's edge hid it) and rounded on the right. Its left end is closed with the
+ * right end mirrored: four sprites, one per tile row, showing the tile column(s) of the right end flipped, put after
+ * the banner in OAM so the banner stays over the body pixels they share. Called before CopyOAM. */
+static int BannerPixel(const struct OamData* sprite, int x, int y) {
+    extern u8 gVram[0x18000];
+    const u16* attr = (const u16*)sprite;
+    const unsigned tile = (attr[2] & 0x3FFu) + (unsigned)(y >> 3) * 8u + (unsigned)(x >> 3); /* 1D, 64 wide */
+    const u8 b = gVram[0x10000u + tile * 32u + (unsigned)(y & 7) * 4u + (unsigned)(x & 7) / 2u];
+    return (x & 1) ? b >> 4 : b & 15;
+}
+
+void Port_Draw_PauseBannerCap(void) {
+    if (!Port_Widescreen_PauseWide()) return; /* the game maps sprites 1D throughout */
+    const int count = gOAMControls.updated < 0x80 ? gOAMControls.updated : 0x80;
+    /* 64x32 (shape 1, size 3), not affine, on the GBA screen's top row: the leftmost is the banner's left half,
+     * wherever a page change slides it, and the one 64 to its right its other half. */
+    int left = -1, right = -1, leftX = 0;
+    for (int i = 0; i < count; i++) {
+        const u16* attr = (const u16*)&gOAMControls.oam[i];
+        if ((attr[0] & 0xC300u) != 0x4000u || (attr[1] & 0xC000u) != 0xC000u || (attr[0] & 0xFFu) != 40) continue;
+        const int x = (int)(attr[1] & 0x1FFu) >= 400 ? (int)(attr[1] & 0x1FFu) - 512 : (int)(attr[1] & 0x1FFu);
+        if (left < 0 || x < leftX) left = i, leftX = x;
+    }
+    for (int i = 0; i < count && left >= 0; i++) {
+        const u16* attr = (const u16*)&gOAMControls.oam[i];
+        if ((attr[0] & 0xC300u) != 0x4000u || (attr[1] & 0xC000u) != 0xC000u || (attr[0] & 0xFFu) != 40) continue;
+        if ((int)(attr[1] & 0x1FFu) == ((leftX + 64) & 0x1FF)) right = i;
+    }
+    if (left < 0 || count + 4 > 0x80) return;
+    const u16* banner = (const u16*)&gOAMControls.oam[left];
+    const int width = right >= 0 && (((const u16*)&gOAMControls.oam[right])[2] & 0xF000u) == (banner[2] & 0xF000u) ? 128 : 64;
+    /* The banner's columns as patterns of colour indices, 32 rows each. */
+    #define BANNER_PX(x, y) ((x) < 64 ? BannerPixel(&gOAMControls.oam[left], (x), (y)) : BannerPixel(&gOAMControls.oam[right], (x) - 64, (y)))
+    /* The banner: the first run of columns with something in them (the second sprite may be another graphic, as on
+     * the map page). */
+    int first = -1, last = -1;
+    for (int x = 0; x < width; x++) {
+        int any = 0;
+        for (int y = 0; y < 32 && !any; y++) any = BANNER_PX(x, y) != 0;
+        if (any && first < 0) first = x;
+        if (!any && first >= 0) break;
+        if (any) last = x;
+    }
+    if (first < 0 || last - first < 24) return;
+    /* Open on the left: its first column is the body's (the same as the next). */
+    for (int y = 0; y < 32; y++)
+        if (BANNER_PX(first, y) != BANNER_PX(first + 1, y)) return;
+    /* The right end: the columns after the last one that still is the body's, compared on its outline only (the rows
+     * not of the fill colour of its middle row: the text may run up to the end). */
+    const int fill = BANNER_PX(first, 16);
+    int end = last;
+    while (end > first) {
+        int body = 1;
+        for (int y = 0; y < 32 && body; y++)
+            if (BANNER_PX(first, y) != fill) body = BANNER_PX(end, y) == BANNER_PX(first, y);
+        if (body) break;
+        end--;
+    }
+    end++;
+    if (last - end + 1 < 2 || last - end + 1 > 8) return;
+    /* The tile column(s) holding it: one if it fits in the last, else two (16 wide). */
+    const int tileW = (end >> 3) == (last >> 3) ? 8 : 16;
+    const int c0 = (last >> 3) * 8 + 8 - tileW;
+    const int capW = last - end + 1;
+    /* Flipped, column c0 + i shows at sx + tileW - 1 - i; the outermost (last) lands capW left of the first. */
+    const int sx = (banner[1] & 0x1FF) + first - capW - tileW + 1 + last - c0;
+    const int owner = c0 < 64 ? left : right;
+    const u16* src = (const u16*)&gOAMControls.oam[owner];
+    const unsigned baseTile = (src[2] & 0x3FFu) + (unsigned)((c0 & 63) >> 3);
+    #undef BANNER_PX
+    u8* oam = (u8*)&gOAMControls.oam[0];
+    int out = count;
+    for (int row = 0; row < 4; row++) {
+        u16 attr[3];
+        attr[0] = (u16)((banner[0] & ~0xC0FFu) | (tileW == 16 ? 0x4000u : 0u) | (u16)((40 + row * 8) & 0xFF));
+        attr[1] = (u16)(((banner[1] & ~0xF1FFu) | 0x1000u | ((u32)sx & 0x1FFu))); /* size 0: 8x8 or 16x8; h-flip */
+        attr[2] = (u16)((src[2] & ~0x3FFu) | ((baseTile + (unsigned)row * 8u) & 0x3FFu));
+        memcpy(oam + out * 8, attr, sizeof(attr));
+        virtuappu_mode1_obj_y_negative_staged[out] = 0;
+        virtuappu_mode1_obj_clip_mark_staged[out] = virtuappu_mode1_obj_clip_mark_staged[left];
+        virtuappu_mode1_obj_depth_staged[out] = virtuappu_mode1_obj_depth_staged[left];
+        virtuappu_mode1_obj_depth_top_staged[out] = virtuappu_mode1_obj_depth_top_staged[left];
+        virtuappu_mode1_obj_group_staged[out] = virtuappu_mode1_obj_group_staged[left];
+        out++;
+    }
+    gOAMControls.updated = (u8)out;
 }
 
 /* ---- ram_DrawDirect (port of arm_DrawDirect @ 0x080B280C) ----
@@ -560,7 +1013,9 @@ void ram_DrawDirect(OAMCommand* cmd, u32 spriteIndex, u32 frameIndex) {
     memcpy(&cmdFlags, &cmd->_4, sizeof(cmdFlags)); /* _4 | (_6 << 16) */
     u16 cmdExtra = cmd->_8;
 
+    const int wide = WideSpritesBegin();
     RenderSpritePieces(frameData, baseX, baseY, cmdFlags, cmdExtra);
+    WideSpritesEnd(wide);
 }
 
 /* ---- ram_sub_080ADA04 (port of arm_sub_080ADA04) ----
@@ -586,7 +1041,9 @@ void ram_sub_080ADA04(OAMCommand* cmd, void* frameDataPtr) {
     memcpy(&cmdFlags, &cmd->_4, sizeof(cmdFlags));
     u16 cmdExtra = cmd->_8;
 
+    const int wide = WideSpritesBegin();
     RenderSpritePieces(frameData, baseX, baseY, cmdFlags, cmdExtra);
+    WideSpritesEnd(wide);
 }
 
 /* ====================================================================
@@ -623,6 +1080,7 @@ static void ClearEntityDrawLists(void) {
 typedef struct {
     s16 packed0; /* (screenX << 6) | shadowType */
     s16 packed1; /* (screenY << 6) | priority   */
+    u8 group;    /* port: the entity's group (sRenderingGroup), for its shadow's stereo support */
 } DeferredEntry;
 
 typedef struct {
@@ -819,7 +1277,142 @@ static void LookupAndRenderNormal(Entity* entity, s32 x, s32 y, u32 flags, u16 e
  *   spriteAnimation[2] < 0:  direct frame data from entity->myHeap
  *   spriteAnimation[2] > 0:  multi-part from gUnk_020000C0
  */
+/* What stands out in stereo 3D (owner, 2026-10-20): the treasure Link shows when he gets one (LinkHoldingItem), 4 px,
+ * and the object he lifts to throw (the carried entity's child while heldObject is 3, lifting, or 4, holding;
+ * UpdateCarriedObject) with a depth that follows its height over the floor: 4 px over his head, less as it rises
+ * and, once thrown, as it falls, 0 when it lands and breaks. Its height over his head is learnt while he holds it. */
+enum { HELD_DEPTH_Q = 16 /* 4 px */ };
+static const Entity* sCarried;
+static const Entity* sThrown;
+static u8 sThrownKind, sThrownId;
+static s32 sHoldHeight = 16;
+
+static u8 DepthForHeight(const Entity* entity) {
+    const s32 height = -(s32)entity->z.HALF.HI;
+    if (height <= 0) return 0;
+    const s32 q = height * HELD_DEPTH_Q / sHoldHeight;
+    return (u8)(q > HELD_DEPTH_Q ? HELD_DEPTH_Q : q);
+}
+
+static u8 SpriteDepth(const Entity* entity) {
+    extern PlayerEntity gPlayerEntity;
+    if (entity->kind == OBJECT && entity->id == LINK_HOLDING_ITEM) return HELD_DEPTH_Q;
+    const Entity* carried = (u8)(gPlayerState.heldObject - 3) < 2 && gPlayerEntity.carriedEntity != NULL
+                                ? gPlayerEntity.carriedEntity->child
+                                : NULL;
+    if (carried != NULL) {
+        sCarried = carried;
+        sThrown = NULL;
+        if (gPlayerState.heldObject == 4 && -(s32)carried->z.HALF.HI > 4) sHoldHeight = -(s32)carried->z.HALF.HI;
+    } else if (sCarried != NULL) {
+        /* Let go of: thrown (or dropped). Followed while it is in the air. */
+        sThrown = sCarried;
+        sThrownKind = sCarried->kind;
+        sThrownId = sCarried->id;
+        sCarried = NULL;
+    }
+    if (entity == carried) return DepthForHeight(entity);
+    if (entity == sThrown) {
+        /* The slot can be another entity's by now; a landed one is on the floor for good. */
+        if (entity->kind != sThrownKind || entity->id != sThrownId || entity->z.HALF.HI >= 0) {
+            sThrown = NULL;
+            return 0;
+        }
+        return DepthForHeight(entity);
+    }
+#ifdef TMC_3DS
+    /* A Keese flies without ever leaving z 0 (type 0: it fakes the height with spriteOffsetY) or sits at z -16 all the
+     * time (the other types), resting and sleeping included. Its flight is its action (1 = KEESE_ACTION_FLY): in the air
+     * it stands out as an entity 16 px up, at rest and asleep it is on the ground's plane. */
+    if (entity->kind == ENEMY && entity->id == KEESE) {
+        extern int Port_Config_StereoHeightDepthQ(int height);
+        return entity->action == 1 ? (u8)Port_Config_StereoHeightDepthQ(16) : 0;
+    }
+    /* Standing on the ground (z 0) a sprite stays on the ground's plane, so it does not float; raised off it
+     * (jumping, falling, flying) it stands out with its height (stereo_world_height in tmc3ds.ini). */
+    extern int Port_Config_StereoHeightDepthQ(int height);
+    return (u8)Port_Config_StereoHeightDepthQ(-(s32)entity->z.HALF.HI);
+#else
+    return 0;
+#endif
+}
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra);
+
 static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
+    sRenderingDepth = SpriteDepth(entity);
+    sRenderingBody = 1;
+    sRenderingBoss = entity->kind == ENEMY && entity->id == CHUCHU_BOSS;
+#ifdef TMC_3DS
+    {
+        const int mode = SpriteDepthMode(entity);
+        sRenderingInvert = mode == PORT_DEPTH_INVERT;
+        sRenderingFlat = mode == PORT_DEPTH_FLAT;
+        sRenderingSide = mode == PORT_DEPTH_LEFT || mode == PORT_DEPTH_RIGHT ? mode : 0;
+        sRenderingRaised = mode == PORT_DEPTH_RAISED;
+        sRenderingFixedQ = (mode & PORT_DEPTH_FIXED_BASE) != 0 ? (mode & 0x3f) : -1;
+    }
+#endif
+    /* Its jump (1 px at most) must not use up the room the rise from feet to head needs under the world's cap: with the
+     * whole of it, every part reached the cap at the top of a jump and the ramp was lost. */
+    if (sRenderingBoss && sRenderingDepth > 4) sRenderingDepth = 4;
+    static u8 sNextGroup = 0;
+    sNextGroup = SpriteSupport3DS_NextGroup(sNextGroup);
+    sRenderingGroup = sLastGroup = sNextGroup;
+    DrawEntitySpritesOf(entity, x, y, flags, extra);
+    sRenderingGroup = 0;
+    sRenderingBody = 0;
+    sRenderingBoss = 0;
+#ifdef TMC_3DS
+    sRenderingInvert = sRenderingFlat = sRenderingSide = sRenderingRaised = 0;
+    sRenderingFixedQ = -1;
+#endif
+    sRenderingDepth = 0; /* what is drawn next (the HUD, DrawDirect) stays on the screen plane */
+}
+
+#ifdef TMC_3DS
+/* An object drawn as several entities at one spot leans as one, like the parts of one entity (sJoinMeasure): the giant
+ * twig of the Crenel paths (area 0x12) is three (types 0, 0x40, 0x41), and the middle one, leant from its own feet 8 px
+ * above the others', stood at another depth and moved a pixel apart from them. Each of them measures the pieces of all
+ * of them (at their own screen positions) and leans from that box. */
+static int JoinSiblingEntities(Entity* entity, s32 x, s32 y) {
+    if (entity->kind != OBJECT || entity->id != GIANT_TWIG) return 0;
+    sJoinFeet = -0x7fffffff;
+    sJoinTop = 0x7fffffff;
+    sJoinLeft = 0x7fffffff;
+    sJoinRight = -0x7fffffff;
+    sJoinMeasure = 1;
+    for (LinkedList* list = gEntityLists; list < &gEntityLists[9]; ++list) {
+        if (list->first == NULL) continue;
+        for (Entity* e = list->first; e != (Entity*)list && e != NULL; e = e->next) {
+            if (e->kind != entity->kind || e->id != entity->id || e->x.HALF.HI != entity->x.HALF.HI ||
+                e->y.HALF.HI != entity->y.HALF.HI || (s8)e->spriteAnimation[2] != 0)
+                continue;
+            s32 sx, sy;
+            u32 sf;
+            u16 se;
+            ResolveEntitySpriteParams(e, &sx, &sy, &sf, &se);
+            LookupAndRenderNormal(e, sx, sy, sf, se);
+        }
+    }
+    sJoinMeasure = 0;
+    sJoinKnown = sJoinFeet > -0x7fffffff;
+    if (sJoinKnown) {
+        /* Where this one is drawn, against where it was measured (the caller's position may carry offsets). */
+        s32 ox, oy;
+        u32 of;
+        u16 oe;
+        ResolveEntitySpriteParams(entity, &ox, &oy, &of, &oe);
+        sJoinFeet += y - oy;
+        sJoinTop += y - oy;
+        sJoinLeft += x - ox;
+        sJoinRight += x - ox;
+    }
+    return sJoinKnown;
+}
+#endif
+
+static void DrawEntitySpritesOf(Entity* entity, s32 x, s32 y, u32 flags, u16 extra) {
     s8 renderMode = (s8)entity->spriteAnimation[2]; /* offset 0x28 */
 
     extern PlayerEntity gPlayerEntity;
@@ -829,6 +1422,13 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
 
     if (renderMode == 0) {
         /* Normal sprite rendering */
+#ifdef TMC_3DS
+        if (sRenderingBody && !sRenderingFlat && JoinSiblingEntities(entity, x, y)) {
+            LookupAndRenderNormal(entity, x, y, flags, extra);
+            sJoinKnown = 0;
+            return;
+        }
+#endif
         LookupAndRenderNormal(entity, x, y, flags, extra);
     } else if (renderMode < 0) {
         /* Direct frame data from myHeap */
@@ -841,68 +1441,101 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
         struct_gUnk_020000C0* slot = &gUnk_020000C0[(u8)renderMode];
         u16 cleanExtra = extra & 0x0FFF; /* clear palette bits */
 
-        for (int part = 0; part < 4; part++) {
-            struct_gUnk_020000C0_1* sub = &slot->unk_00[part];
-            if (!(*(u8*)&sub->unk_00 & 1)) /* not active */
-                return;
+        /* The parts of one entity (a carpenter's body, head and tool) lean as one: measured first, over all of them, then
+         * each leans from the whole box instead of from its own feet (the head started again at 0). Not Link (tuned by
+         * hand) nor the big Chuchu (its own ground, below). */
+#ifdef TMC_3DS
+        const int join = sRenderingBody && !sRenderingFlat && !sRenderingPlayer && !sRenderingBoss;
+#else
+        const int join = 0;
+#endif
+        for (int pass = join ? 0 : 1; pass < 2; ++pass) {
+#ifdef TMC_3DS
+            if (pass == 0) {
+                sJoinFeet = -0x7fffffff;
+                sJoinTop = 0x7fffffff;
+                sJoinLeft = 0x7fffffff;
+                sJoinRight = -0x7fffffff;
+                sJoinMeasure = 1;
+            } else if (join) {
+                sJoinMeasure = 0;
+                sJoinKnown = sJoinFeet > -0x7fffffff;
+            }
+#endif
+            for (int part = 0; part < 4; part++) {
+                struct_gUnk_020000C0_1* sub = &slot->unk_00[part];
+                if (!(*(u8*)&sub->unk_00 & 1)) /* not active */
+                    break;
 
-            if (*(u8*)&sub->unk_00 & 2) {
-                /* Sub-entity mode — entity pointer at offset 0x0C */
-                Entity* subEntity = (Entity*)sub->unk_0C;
-                if (subEntity) {
-                    s32 sx, sy;
-                    u32 sf;
-                    u16 se;
-                    ResolveEntitySpriteParams(subEntity, &sx, &sy, &sf, &se);
-                    u8 extraYOff = ((u8*)&gOAMControls)[0x12]; /* fp[0x12] */
-                    sy += extraYOff;
-                    LookupAndRenderNormal(subEntity, sx, sy, sf, se);
-                }
-            } else {
-                /* Direct sub-sprite */
-                u8 subSprSlot = sub->unk_01;
-                if (subSprSlot == 0xFF)
-                    continue; /* skip to next part (don't return!) */
+                if (*(u8*)&sub->unk_00 & 2) {
+                    /* Sub-entity mode — entity pointer at offset 0x0C */
+                    Entity* subEntity = (Entity*)sub->unk_0C;
+                    if (subEntity) {
+                        s32 sx, sy;
+                        u32 sf;
+                        u16 se;
+                        ResolveEntitySpriteParams(subEntity, &sx, &sy, &sf, &se);
+                        u8 extraYOff = ((u8*)&gOAMControls)[0x12]; /* fp[0x12] */
+                        sy += extraYOff;
+                        LookupAndRenderNormal(subEntity, sx, sy, sf, se);
+                    }
+                } else {
+                    /* Direct sub-sprite */
+                    u8 subSprSlot = sub->unk_01;
+                    if (subSprSlot == 0xFF)
+                        continue; /* skip to next part (don't return!) */
 
-                /* Apply sub-part overrides */
-                u32 partFlags = flags;
-                s32 partX = x;
-                s32 partY = y;
-                u16 partExtra = cleanExtra;
+                    /* Apply sub-part overrides */
+                    u32 partFlags = flags;
+                    s32 partX = x;
+                    s32 partY = y;
+                    u16 partExtra = cleanExtra;
 
-                u8 flipOverride = sub->unk_04.BYTES.byte0; /* GBA: LDRB r2, [r4, #4] */
-                partFlags ^= (u32)flipOverride << 28;
+                    u8 flipOverride = sub->unk_04.BYTES.byte0; /* GBA: LDRB r2, [r4, #4] */
+                    partFlags ^= (u32)flipOverride << 28;
 
-                s8 xOff = (s8)((sub->unk_04.WORD >> 16) & 0xFF); /* byte at +6 */
-                s8 yOff = (s8)((sub->unk_04.WORD >> 24) & 0xFF); /* byte at +7 */
+                    s8 xOff = (s8)((sub->unk_04.WORD >> 16) & 0xFF); /* byte at +6 */
+                    s8 yOff = (s8)((sub->unk_04.WORD >> 24) & 0xFF); /* byte at +7 */
 
-                if (!(partFlags & 0x10000000))
-                    partX += xOff;
-                else
-                    partX -= xOff;
-                if (!(partFlags & 0x20000000))
-                    partY += yOff;
-                else
-                    partY += yOff; /* Note: GBA uses ADD for both vflip cases */
+                    if (!(partFlags & 0x10000000))
+                        partX += xOff;
+                    else
+                        partX -= xOff;
+                    if (!(partFlags & 0x20000000))
+                        partY += yOff;
+                    else
+                        partY += yOff; /* Note: GBA uses ADD for both vflip cases */
 
-                u8 palBits = (u8)((sub->unk_04.WORD >> 8) & 0xFF); /* byte at +5 */
-                partExtra |= (u16)palBits << 12;
+                    u8 palBits = (u8)((sub->unk_04.WORD >> 8) & 0xFF); /* byte at +5 */
+                    partExtra |= (u16)palBits << 12;
 
-                u8 tileOff = (u8)(sub->unk_08.WORD & 0xFF); /* byte at +8 */
-                partExtra += tileOff;
+                    u8 tileOff = (u8)(sub->unk_08.WORD & 0xFF); /* byte at +8 */
+                    partExtra += tileOff;
 
-                u16 sprIdx = sub->unk_02 & 0xFFFF;
+                    u16 sprIdx = sub->unk_02 & 0xFFFF;
 
-                /* Look up and render — GBA uses sub-part's own frame index
-                 * (r0 = sub->unk_01, loaded at 080B2754), NOT entity->frameIndex */
-                if (subSprSlot != 0xFF) {
-                    const u8* frameData = LookupFrameData(sprIdx, subSprSlot);
-                    if (frameData) {
-                        RenderSpritePieces(frameData, (s16)partX, (s16)partY, partFlags, partExtra);
+                    /* Look up and render — GBA uses sub-part's own frame index
+                     * (r0 = sub->unk_01, loaded at 080B2754), NOT entity->frameIndex */
+                    if (subSprSlot != 0xFF) {
+                        const u8* frameData = LookupFrameData(sprIdx, subSprSlot);
+                        if (frameData) {
+#ifdef TMC_3DS
+                            const int savedFlat = sRenderingFlat;
+                            if (PartIsFlat(entity, part))
+                                sRenderingFlat = 1;
+#endif
+                            RenderSpritePieces(frameData, (s16)partX, (s16)partY, partFlags, partExtra);
+#ifdef TMC_3DS
+                            sRenderingFlat = savedFlat;
+#endif
+                        }
                     }
                 }
             }
         }
+#ifdef TMC_3DS
+        sJoinMeasure = sJoinKnown = 0;
+#endif
     }
 }
 
@@ -910,7 +1543,15 @@ static void DrawEntitySprites(Entity* entity, s32 x, s32 y, u32 flags, u16 extra
  *
  * Handles one entity: resolves params, checks shadow flags, renders.
  */
+static void ProcessEntityForDrawNative(Entity* entity);
+
 static void ProcessEntityForDraw(Entity* entity) {
+    const int wide = WideSpritesBegin();
+    ProcessEntityForDrawNative(entity);
+    WideSpritesEnd(wide);
+}
+
+static void ProcessEntityForDrawNative(Entity* entity) {
     s32 x, y;
     u32 flags;
     u16 extra;
@@ -1008,6 +1649,7 @@ static void ProcessEntityForDraw(Entity* entity) {
     de->packed1 = (s16)(u16)(((u32)(u16)deferY << 6) | (u32)prioBits);
     u8 shadowType = (*(u8*)&entity->spriteSettings & 0x30) >> 4;
     de->packed0 = (s16)(u16)(((u32)(u16)x << 6) | (u32)shadowType);
+    de->group = sLastGroup;
 }
 
 /* ---- ProcessDrawList (port of sub_080B2534) ---- */
@@ -1146,7 +1788,13 @@ static void ProcessDeferredList(void) {
         const u8* frameData = sShadowFramePtrs[listType];
         if (frameData == NULL)
             continue;
+        const int wide = WideSpritesBegin();
+        /* On the surface under it (its own support, at most its entity's), never at the entity's height:
+         * sRenderingDepth stays 0. */
+        sRenderingGroup = de->group != 0 ? (u8)(de->group | SPRITE_SUPPORT_3DS_SHADOW) : 0;
         RenderSpritePieces(frameData, (s16)screenX, (s16)screenY, 0, extra);
+        sRenderingGroup = 0;
+        WideSpritesEnd(wide);
     }
 }
 

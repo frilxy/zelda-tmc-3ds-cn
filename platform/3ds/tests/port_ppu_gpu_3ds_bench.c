@@ -1,12 +1,16 @@
 #define _POSIX_C_SOURCE 200809L
 /* Host-side benchmark for the Old 3DS PICA200 command builder.
  *
- * Feeds a quick-dump memory snapshot (vram.bin / palettes.bin / oam.bin /
- * io-registers.bin, as written by L+R+A on the console) through
+ * Feeds a screen dump's memory snapshot (vram.bin / palettes.bin / oam.bin /
+ * io-registers.bin: the DEBUG tab's SCREEN DUMP writes them as
+ * debug/tmc-dump-NNNN-<name>) through
  * PpuGpu3DS_BuildCommands so the CPU cost of the geometry build can be
  * measured and profiled without a 3DS or an emulator in the loop.
  *
- *   port_ppu_gpu_3ds_bench <dump-dir> [iterations] [width]
+ *   port_ppu_gpu_3ds_bench <dump-dir|dump-prefix> [iterations] [width]
+ *
+ * A directory holds the files by their plain names; anything else is taken as a
+ * prefix (`debug/tmc-dump-0007`, files `<prefix>-vram.bin`, ...).
  */
 
 #include "port_ppu_gpu_3ds_model.h"
@@ -288,6 +292,7 @@ static int compare_against_software(PpuGpu3DSFrameView* frame,
     ppu.mode = (frame->frameDispcnt & 7u) == 0u ? 1 : 2;
 
     virtuappu_mode1_bg3_repeat = frame->bg3Repeat;
+    virtuappu_mode1_bg_repeat_mask = frame->bgRepeatMask;
     virtuappu_mode1_bind_gba_memory(&frame->memory);
     virtuappu_mode1_set_output_buffer(gSoftwarePixels, 512);
     virtuappu_mode1_set_color_correction(false);
@@ -360,6 +365,10 @@ static bool read_file(const char* dir, const char* name, void* out, size_t bytes
     char path[512];
     snprintf(path, sizeof(path), "%s/%s", dir, name);
     FILE* file = fopen(path, "rb");
+    if (!file) {
+        snprintf(path, sizeof(path), "%s-%s", dir, name);
+        file = fopen(path, "rb");
+    }
     if (!file) return false;
     const size_t read = fread(out, 1, bytes, file);
     fclose(file);
@@ -562,6 +571,10 @@ int main(int argc, char** argv) {
     PpuGpu3DS_FillStaticIndices(indices, indexCapacity);
     PpuGpu3DS_SetMapSpaceEnabled(getenv("PPU_BENCH_NO_MAPSPACE") == NULL);
     PpuGpu3DS_CacheInit(cache);
+    /* The rings the console's textures back; PPU_BENCH_NO_RINGS leaves them out, as before. */
+    if (getenv("PPU_BENCH_NO_RINGS") == NULL)
+        for (unsigned ring = 0; ring < PPU_GPU3DS_RING_COUNT; ++ring)
+            PpuGpu3DS_RingSetStorage(cache, ring, calloc((size_t)PPU_GPU3DS_RING_TEX_WIDTH * PPU_GPU3DS_RING_TEX_HEIGHT, 2));
     memset(atlas, 0, (size_t)PPU_GPU3DS_ATLAS_PIXELS * sizeof(*atlas));
 
     PpuGpu3DSBand bands[MODE1_GBA_HEIGHT];
@@ -866,7 +879,7 @@ int main(int argc, char** argv) {
     printf("  wanted %u vertices, fail reason %u\n", command.requiredVertices,
            command.failReason);
     if (getenv("PPU_BENCH_BATCHES")) {
-        for (size_t i = 0; i < command.batchCount && i < 8u; ++i) {
+        for (size_t i = 0; i < command.batchCount && i < (getenv("PPU_BENCH_BATCHES")[0]=='a' ? 100000u : 8u); ++i) {
             const PpuGpu3DSBatch* b = &command.batches[i];
             printf("    batch %zu layer=%u pri=%u first=%u count=%u line=%u+%u off=(%.4f,%.4f)\n",
                    i, b->layer, b->priority, b->firstIndex, b->indexCount,

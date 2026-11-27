@@ -21,7 +21,7 @@ env:
 
 jobs:
   build:
-    name: Nintendo 3DS JP packages
+    name: Nintendo 3DS JP CIA
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.tag }}
 
       - name: Verify bundled build tools
         run: |
@@ -55,7 +55,7 @@ jobs:
           mkdir -p /opt/devkitpro/tools/bin/
           cp makerom/bin/makerom /opt/devkitpro/tools/bin/
 
-      - name: Build JP 3DSX and CIA
+      - name: Build JP CIA
         run: |
           export PATH="/opt/devkitpro/tools/bin:$PATH"
           ./platform/3ds/build.sh
@@ -70,20 +70,18 @@ jobs:
 
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
 
-          test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
+          test ! -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
 
       - name: Verify release notes are updater-safe
         run: python3 scripts/dev/check_release_notes.py CHANGELOG-cn.md
 
-      - name: Upload JP packages
+      - name: Upload JP CIA
         uses: actions/upload-artifact@v7
         with:
           name: tmc-3ds-packages-JP
           if-no-files-found: error
-          path: |
-            build-3ds/game/tmc-3ds-v*.3dsx
-            build-3ds/game/tmc-3ds-v*.cia
+          path: build-3ds/game/tmc-3ds-v*.cia
 
   publish:
     name: Publish GitHub release
@@ -115,7 +113,7 @@ jobs:
               ;;
           esac
 
-      - name: Download built packages
+      - name: Download built CIA
         uses: actions/download-artifact@v8
         with:
           name: tmc-3ds-packages-JP
@@ -127,13 +125,10 @@ jobs:
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
           TAG="${GITHUB_REF_NAME}"
 
-          # The in-app updater requests assets by exact filename
-          # (tmc-3ds-v<version>.cia / .3dsx) and verifies the SHA-256 digest
-          # GitHub reports, so both files must stay at the asset root.
+          # The in-app updater requests the CIA by exact filename and
+          # verifies the SHA-256 digest GitHub reports.
           test -f "dist/tmc-3ds-v${VERSION}.cia"
-          test -f "dist/tmc-3ds-v${VERSION}.3dsx"
-
-          (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" "tmc-3ds-v${VERSION}.3dsx" > SHA256SUMS.txt)
+          (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" > SHA256SUMS.txt)
 
           # The QR is a convenience, never a gate: apt once hung here for
           # 15+ minutes and blocked a release that had already compiled.
@@ -172,6 +167,5 @@ jobs:
           gh release create "${TAG}" \
             "${ARGS[@]}" \
             "dist/tmc-3ds-v${TMCPORTVERSION}.cia" \
-            "dist/tmc-3ds-v${TMCPORTVERSION}.3dsx" \
             "dist/SHA256SUMS.txt" \
             "dist/QR-${TAG}-github.png"

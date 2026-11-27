@@ -7,6 +7,7 @@
 #ifdef PC_PORT
 #include "port_gba_mem.h"
 #include "port_rom.h"
+#include "port_widescreen.h"
 #include <stdio.h>
 #endif
 
@@ -126,6 +127,33 @@ static void Port_MakeFadeBuff256(u8* src, u8* dest, u16 intensity, u8 color) {
 }
 #endif
 
+#ifdef PC_PORT
+/* The colour a pure black pixel has under the fade now (palette slot 0's
+ * intensity and colour, the way FadeVBlank mixes it), as 8-bit RGB. The
+ * presenter fills the bars beside a narrow view with it, so a fade to white
+ * takes the whole screen and not only the game's area. Black when no fade. */
+void Port_FadedBlackRGB(u8* r8, u8* g8, u8* b8) {
+    const struct_020354C0* slot = &gUnk_020354C0[0];
+    u32 intensity = slot->unk2, color = slot->unk1;
+    *r8 = *g8 = *b8 = 0;
+    if (intensity == 0 || color == 0 || gRomData == NULL) return;
+    u8 brightness = gEwram[6];
+    if (brightness >= NUM_FADE_BRIGHTNESS) brightness = 0;
+    u32 region_shift = 0;
+#if defined(MULTI_REGION) || defined(EU)
+    if (REGION_IS_EU) region_shift = 0x48;
+#endif
+    const u16* tableR = (const u16*)(gRomData + sFadeTableOffsets[brightness][0] + region_shift);
+    const u16* tableG = (const u16*)(gRomData + sFadeTableOffsets[brightness][1] + region_shift);
+    const u16* tableB = (const u16*)(gRomData + sFadeTableOffsets[brightness][2] + region_shift);
+    const u32 channel = ((intensity * color) >> 10) & 0x3E;
+    const u16 c = (u16)(tableR[channel >> 1] | tableG[channel >> 1] | tableB[channel >> 1]);
+    *r8 = (u8)((c & 31u) * 255u / 31u);
+    *g8 = (u8)(((c >> 5) & 31u) * 255u / 31u);
+    *b8 = (u8)(((c >> 10) & 31u) * 255u / 31u);
+}
+#endif
+
 void SetBrightness(u32 brightness) {
     gSaveHeader->brightness = brightness;
     gUsedPalettes = 0xffffffff;
@@ -206,6 +234,9 @@ void SetFade(u32 type, u32 speed) {
     if (type & FADE_IRIS) {
         sub_0801E1B8(gFadeControl.win_inside_cnt, gFadeControl.win_outside_cnt);
         sub_0801E1EC(gFadeControl.iris_x, gFadeControl.iris_y, gFadeControl.iris_size);
+#ifdef PC_PORT
+        Port_Widescreen_NoteIris();
+#endif
         if ((type & FADE_IN_OUT) == 0) {
             gFadeControl.type &= ~FADE_INSTANT;
             ResetFadeMask();
@@ -331,11 +362,17 @@ static u32 sub_080502A4(FadeControl* ctl) {
         if (delta << 16 <= 0)
             gFadeControl.iris_size = 0;
         sub_0801E1EC(gFadeControl.iris_x, gFadeControl.iris_y, gFadeControl.iris_size);
+#ifdef PC_PORT
+        Port_Widescreen_NoteIris();
+#endif
         if (!gFadeControl.iris_size)
             return 0;
     } else {
         gFadeControl.iris_size += gFadeControl.speed;
         sub_0801E1EC(gFadeControl.iris_x, gFadeControl.iris_y, gFadeControl.iris_size);
+#ifdef PC_PORT
+        Port_Widescreen_NoteIris();
+#endif
         if (gFadeControl.iris_size > 150) {
             sub_0801E104();
             return 0;

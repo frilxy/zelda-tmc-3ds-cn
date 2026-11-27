@@ -105,6 +105,17 @@ int port_hdma_dest_overlaps(const void* lo, const void* hi) {
     return 0;
 }
 
+const void* port_hdma_source_for_dest(const void* dest) {
+    int ch;
+
+    for (ch = 0; ch < HDMA_CHANNELS; ++ch) {
+        if (s_channels[ch].active && s_channels[ch].dest_orig == (const uint8_t*)dest) {
+            return s_channels[ch].src_orig;
+        }
+    }
+    return NULL;
+}
+
 void port_hdma_step_line(int line) {
     int ch;
 

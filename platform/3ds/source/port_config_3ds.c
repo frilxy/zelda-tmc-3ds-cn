@@ -2,6 +2,7 @@
 #include "platform_3ds.h"
 #include "config_values_3ds.h"
 #include "rando/rando.h"
+#include "stereo_3ds.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +24,13 @@ static _Atomic bool sAutosave;
 static bool sConsoleParity;
 static _Atomic Port3DSAspectRatio sAspectRatio = CONFIG_3DS_DEFAULT_ASPECT;
 static _Atomic Port3DSDisplayStyle sDisplayStyle = CONFIG_3DS_DEFAULT_DISPLAY;
+static _Atomic bool sStereoWorld;
+static bool sStereo3D = true;
+static int sStereoWorldBg1 = 2;
+static int sStereoWorldObj;
+static int sStereoWorldHeight = 25;
+static int sStereoWorldBody = 8;
+static bool sNeighbourRooms = true;
 /* The desktop file-select overlay is rendered on the gameplay screen and
  * has no useful 3DS interaction path. Keep the native second-screen UI
  * separate and leave this desktop-only overlay disabled. */
@@ -81,6 +89,7 @@ static int sGpuScissorMode = 1;
  * batch unconditionally: windows and blending come out wrong, but if the
  * missing band appears then the stencil is what was rejecting it. */
 static bool sGpuStencil = true;
+static bool sGpuFade = true;
 /* -1 keeps the built-in choice; 0 or 1 pins the audio worker for an A/B. */
 static int sAudioCore = -1;
 /* -1 keeps core 0; 1 moves the bottom-screen painter off the main thread's core. */
@@ -177,6 +186,13 @@ static void SaveConfig(void) {
     fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
     fprintf(file, "screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     fprintf(file, "display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
+    fprintf(file, "neighbour_rooms=%u\n", sNeighbourRooms ? 1u : 0u);
+    fprintf(file, "stereo_3d_on=%u\n", sStereo3D ? 1u : 0u);
+    fprintf(file, "stereo_world_on=%u\n", sStereoWorld ? 1u : 0u);
+    fprintf(file, "stereo_world_bg1=%d\n", sStereoWorldBg1);
+    fprintf(file, "stereo_world_obj=%d\n", sStereoWorldObj);
+    fprintf(file, "stereo_world_height=%d\n", sStereoWorldHeight);
+    fprintf(file, "stereo_world_body=%d\n", sStereoWorldBody);
     fprintf(file, "master_volume=%.2f\n", (double)sVolume);
     fprintf(file, "panel_backdrop=%d\n", sBackdrop);
     fprintf(file, "turbo_multiplier=%u\n", sTurboMultiplier);
@@ -210,6 +226,7 @@ static void SaveConfig(void) {
     fprintf(file, "gpu_viewport_offset=%u\n", sGpuViewportOffset ? 1u : 0u);
     fprintf(file, "gpu_scissor_mode=%d\n", sGpuScissorMode);
     fprintf(file, "gpu_stencil=%u\n", sGpuStencil ? 1u : 0u);
+    fprintf(file, "gpu_fade=%u\n", sGpuFade ? 1u : 0u);
     fprintf(file, "audio_core=%d\n", sAudioCore);
     fprintf(file, "bottom_core=%d\n", sBottomCore);
     fprintf(file, "bottom_map_skip=%u\n", sBottomMapSkip ? 1u : 0u);
@@ -270,6 +287,7 @@ void Port_Config_Load(const char* path) {
             else if (strcmp(key, "gpu_viewport_offset") == 0) sGpuViewportOffset = ParseBool(value);
             else if (strcmp(key, "gpu_scissor_mode") == 0) sGpuScissorMode = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "gpu_stencil") == 0) sGpuStencil = ParseBool(value);
+            else if (strcmp(key, "gpu_fade") == 0) sGpuFade = ParseBool(value);
             else if (strcmp(key, "audio_core") == 0) sAudioCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_core") == 0) sBottomCore = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "bottom_map_skip") == 0) sBottomMapSkip = ParseBool(value);
@@ -300,7 +318,13 @@ void Port_Config_Load(const char* path) {
                 hasScreenAspect = true;
             } else if (strcmp(key, "display_style") == 0) {
                 sDisplayStyle = ConfigValues3DS_ParseDisplay(value);
-            }
+            } else if (strcmp(key, "neighbour_rooms") == 0) sNeighbourRooms = ParseBool(value);
+            else if (strcmp(key, "stereo_3d_on") == 0) sStereo3D = ParseBool(value);
+            else if (strcmp(key, "stereo_world_on") == 0) sStereoWorld = ParseBool(value);
+            else if (strcmp(key, "stereo_world_bg1") == 0) sStereoWorldBg1 = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_obj") == 0) sStereoWorldObj = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_height") == 0) sStereoWorldHeight = (int)strtol(value, NULL, 10);
+            else if (strcmp(key, "stereo_world_body") == 0) sStereoWorldBody = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "master_volume") == 0) sVolume = strtof(value, NULL);
             else if (strcmp(key, "panel_backdrop") == 0) sBackdrop = (int)strtol(value, NULL, 10);
             else if (strcmp(key, "turbo_multiplier") == 0) sTurboMultiplier = (unsigned)strtoul(value, NULL, 10);
@@ -356,6 +380,7 @@ bool Port_Config_GpuFrameSync(void) { return sGpuFrameSync; }
 bool Port_Config_GpuViewportOffset(void) { return sGpuViewportOffset; }
 int Port_Config_GpuScissorMode(void) { return sGpuScissorMode; }
 bool Port_Config_GpuStencil(void) { return sGpuStencil; }
+bool Port_Config_GpuFade(void) { return sGpuFade; }
 int Port_Config_AudioCore(void) { return sAudioCore; }
 int Port_Config_BottomCore(void) { return sBottomCore; }
 bool Port_Config_BottomMapSkip(void) { return sBottomMapSkip; }
@@ -605,6 +630,31 @@ bool Port_Config_3DSFullViewComboEnabled(void) {
      * the following scene latch before any 400x240 geometry is published. */
     const Port3DSAspectRatio aspect = sAspectRatio;
     const Port3DSDisplayStyle style = sDisplayStyle;
-    return Platform3DS_IsNew3DS() && aspect == PORT_3DS_ASPECT_WIDE &&
-           style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+    return aspect == PORT_3DS_ASPECT_WIDE && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }
+
+int Port_Config_GetNeighbourRooms(void) { return sNeighbourRooms; }
+
+bool Port_Config_Stereo3D(void) { return sStereo3D; }
+int Port_Config_GetStereoWorld(void) { return sStereoWorld; }
+void Port_Config_SetStereoWorld(bool enabled) {
+    sStereoWorld = enabled;
+    SaveConfig();
+}
+
+int Port_Config_StereoWorldDepth(int which) {
+    if (!sStereoWorld) return 0;
+    const int depth = which == 0 ? sStereoWorldBg1 : sStereoWorldObj;
+    return depth < -16 ? -16 : (depth > 16 ? 16 : depth);
+}
+
+static int StereoDepthQuarters(int height, int percent, int maxDepth) {
+    if (!sStereo3D || !sStereoWorld || percent <= 0 || height <= 0 || !Stereo3DS_WorldScene()) return 0;
+    /* Past this limit the smallest positive multiplier already saturates. */
+    if (height >= maxDepth * 25 || percent >= maxDepth * 25) return maxDepth;
+    const int depth = height * percent / 25;
+    return depth > maxDepth ? maxDepth : (int)depth;
+}
+
+int Port_Config_StereoHeightDepthQ(int height) { return StereoDepthQuarters(height, sStereoWorldHeight, 20); }
+int Port_Config_StereoBodyDepthQ(int height) { return StereoDepthQuarters(height, sStereoWorldBody, 12); }

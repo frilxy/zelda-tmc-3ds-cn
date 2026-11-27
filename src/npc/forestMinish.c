@@ -12,6 +12,7 @@
 #include "common.h"
 #ifdef PC_PORT
 #include "port_scripts.h"
+#include "port_widescreen.h"
 #endif
 #include "flags.h"
 #include "effects.h"
@@ -586,6 +587,27 @@ void ForestMinish(ForestMinishEntity* this) {
                 super->timer = 0;
                 SetEntityPriority(super, PRIO_MESSAGE);
 #ifdef PC_PORT
+                if (super->type2 >= 39 && super->type2 <= 43) {
+                    /* The Minish village's intro (script_ForestMinish5..9): the five walk in from just
+                     * outside the GBA's 240x160 view around Link (0x208, 0x2f0..0x330), and appear there.
+                     * In a wider view that spot is on screen, so they pop in. The view is not yet at its final size
+                     * when they spawn (266 wide, 400x240 once Full View latches), so use the widest one. Start them further out,
+                     * one sprite past the edge of the view, and let them walk the extra distance: the
+                     * script waits for each one's arrival (sync flags), so it only takes a little longer. */
+                    const int extraX = Port_Widescreen_HudTargetViewWidth() > 240 ? (400 - 240) / 2 : 0;
+                    const int extraY = Port_Widescreen_HudTargetViewHeight() > 160 ? (240 - 160) / 2 : 0;
+                    if (extraX > 0) {
+                        if (super->x.HALF.HI < 0x208 - 0x40) super->x.HALF.HI -= extraX + 16;
+                        else if (super->x.HALF.HI > 0x208 + 0x40) super->x.HALF.HI += extraX + 16;
+                    }
+                    if ((extraX > 0 || extraY > 0) && super->type2 == 39) {
+                        /* The one that comes out of the shoe house's door would walk over the house from
+                         * above. Bring him down the path that runs north on the right (x 0x278) instead;
+                         * script.c sends him back up it at the end. */
+                        super->x.HALF.HI = 0x278;
+                        super->y.HALF.HI = 0x2b0;
+                    }
+                }
                 StartCutscene(super, (u16*)Port_ResolveScript(gForestMinishScriptGBAAddrs[super->type2]));
 #else
                 StartCutscene(super, (u16*)gUnk_08109D18[super->type2]);

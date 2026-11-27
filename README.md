@@ -31,7 +31,7 @@ https://discord.gg/SMW49UMkw
   shows only its stone frame until Link receives it.
 * New 3DS enhancements including 804 MHz mode, L2 cache, multi-core rendering, and optional 2x–5x turbo using the C-Stick.
 * Three display styles: Blur, Bilinear, and Pixel Perfect.
-* In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA/3DSX installation.
+* In-app updates with Stable and Pre-release channels, top-screen changelogs, and verified CIA installation.
 * Built-in Project Picori Randomizer support with separate normal and randomized save data.
 * Native stereo audio, persistent settings, reliable save handling, FPS tools, and diagnostic dumps for bug reports.
 
@@ -47,7 +47,7 @@ The bottom-screen worker avoids redundant static redraws while keeping touch inp
 
 ## Installation
 
-1. Install the CIA with FBI, or use the 3DSX build with the Homebrew Launcher.
+1. Install the CIA with FBI.
 
 ```text
 tmc-3ds-v2.1.cia
@@ -139,7 +139,7 @@ turn pages. **Download Update** asks for confirmation before downloading and
 installing. Save your game first: the application closes after a successful update.
 
 CIA builds overwrite only this application's title after checking its ID and
-SHA-256 digest. 3DSX builds replace the launched file with rollback protection.
+SHA-256 digest.
 Wi-Fi is required; connection failures leave the current installation available.
 
 ## Releases
@@ -147,7 +147,6 @@ Wi-Fi is required; connection failures leave the current installation available.
 Every GitHub release includes:
 
 * Installable CIA
-* Homebrew Launcher 3DSX
 * FBI QR code
 * Source code archive
 
@@ -174,11 +173,10 @@ chmod +x platform/3ds/build.sh
 ./platform/3ds/build.sh
 ```
 
-Builds are generated under:
+The installable CIA is generated at
 
 ```text
-build-3ds/game/tmc-3ds-v2.1.cia
-build-3ds/game/tmc-3ds-v2.1.3dsx
+build-3ds/game/tmc-3ds-v<version>.cia
 ```
 
 The build does not include or embed a ROM.

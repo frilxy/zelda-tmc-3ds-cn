@@ -197,6 +197,7 @@ enum {
 #ifdef TMC_3DS
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
+    SS_SET_STEREO_WORLD,
 #endif
     SS_SET_COUNT
 };
@@ -2066,7 +2067,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "顶部HUD",  "宽屏",     "跟随镜头", "风之印记",     "自动返回楼层", "加速倍率", "主音量",
     "自动存档", "色彩校正", "显示帧率", "按住推进文本", "随机化",       "面板背景", "交换屏幕",
 #ifdef TMC_3DS
-    "宽高比",   "显示方式",
+    "宽高比",   "显示方式", "3D景深",
 #endif
 };
 
@@ -2123,6 +2124,7 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_ASPECT_RATIO;
         out[n++] = SS_SET_DISPLAY_STYLE;
+        out[n++] = SS_SET_STEREO_WORLD;
         out[n++] = SS_SET_TOP_HUD;
         out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
@@ -2400,6 +2402,9 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_STEREO_WORLD:
+            on = Port_Config_GetStereoWorld();
+            break;
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
@@ -3614,6 +3619,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
+                    break;
+                case SS_SET_STEREO_WORLD:
+                    Port_Config_SetStereoWorld(!Port_Config_GetStereoWorld());
                     break;
 #endif
                 case SS_SET_FOLLOW:

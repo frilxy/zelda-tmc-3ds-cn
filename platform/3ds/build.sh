@@ -22,6 +22,12 @@ if [[ ! -x "${BANNERTOOL}" && -x "${DEVKITPRO}/tools/bin/bannertool" ]]; then
   BANNERTOOL="${DEVKITPRO}/tools/bin/bannertool"
 fi
 
+if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then
+  printf 'CIA packaging requires executable makerom and bannertool.\n' >&2
+  printf '  makerom: %s\n  bannertool: %s\n' "${MAKEROM}" "${BANNERTOOL}" >&2
+  exit 1
+fi
+
 export DEVKITPRO
 if [[ -z "${UPDATE_DEPS_ROOT:-}" ]]; then
   UPDATE_DEPS_ROOT="${DEVKITPRO}/portlibs/3ds"
@@ -38,11 +44,6 @@ cmake -S "${ROOT}/platform/3ds" -B "${BUILD}" \
   -DTMC_3DS_REGION="${TMC3DS_REGION:-USA}" \
   -DUPDATE_DEPS_ROOT="${UPDATE_DEPS_ROOT:-${DEVKITPRO}/portlibs/3ds}"
 cmake --build "${BUILD}" --parallel "${TMC3DS_JOBS:-4}"
-
-if [[ ! -x "${MAKEROM}" || ! -x "${BANNERTOOL}" ]]; then
-  printf '3DSX ready; makerom/bannertool are unavailable for CIA packaging.\n'
-  exit 0
-fi
 
 "${BANNERTOOL}" makesmdh \
   -s "The Minish Cap 3DS v${VERSION}" \
@@ -66,5 +67,4 @@ cd "${ROOT}"
   -banner "${BUILD}/tmc-3ds.bnr"
 )
 
-printf 'Ready:\n  %s\n  %s\n' \
-  "${BUILD}/tmc-3ds-v${VERSION}.3dsx" "${BUILD}/tmc-3ds-v${VERSION}.cia"
+printf 'Ready:\n  %s\n' "${BUILD}/tmc-3ds-v${VERSION}.cia"

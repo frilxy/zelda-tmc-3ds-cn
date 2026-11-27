@@ -99,6 +99,8 @@ bool Port_Config_GpuViewportOffset(void);
 int Port_Config_GpuScissorMode(void);
 /* 3DS: `gpu_stencil=0` draws every batch, ignoring window/blend masking. */
 bool Port_Config_GpuStencil(void);
+/* 3DS: `gpu_fade=0` uses the game palette for whole-screen fades. */
+bool Port_Config_GpuFade(void);
 int Port_Config_AudioCore(void);
 int Port_Config_BottomCore(void);
 /* 3DS: `bottom_map_skip=0` restores an unconditional MAP-tab repaint. */
@@ -265,9 +267,18 @@ void Port_Config_Cycle3DSAspectRatio(void);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);
-/* Experimental presentation gate only. It does not add a persisted enum or
- * INI key: New 3DS + the existing Wide + Pixel Perfect selections opt in. */
+/* Wide + Pixel Perfect selects the 400x240 gameplay view. */
 bool Port_Config_3DSFullViewComboEnabled(void);
+int Port_Config_GetNeighbourRooms(void);
+
+/* The hardware 3D slider controls stereoscopy. World depth is optional. */
+bool Port_Config_Stereo3D(void);
+int Port_Config_GetStereoWorld(void);
+void Port_Config_SetStereoWorld(bool enabled);
+/* Layer disparity in pixels: which = 0 for BG1 or 1 for sprites. */
+int Port_Config_StereoWorldDepth(int which);
+int Port_Config_StereoHeightDepthQ(int height);
+int Port_Config_StereoBodyDepthQ(int height);
 
 /* New 3DS C-stick turbo multiplier. The device supports 2x through 5x and
  * applies changes immediately to the frame-boundary scheduler. */

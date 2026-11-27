@@ -303,11 +303,11 @@ int main(void) {
     uint16_t slot1;
 
     for (unsigned bits = 0; bits < 8; ++bits) {
-        const bool isNew3DS = (bits & 4u) != 0;
+        const bool fullView = (bits & 4u) != 0;
         const bool initialized = (bits & 2u) != 0;
         const bool disabled = (bits & 1u) != 0;
-        CHECK(PpuGpu3DS_ShouldUse(isNew3DS, initialized, disabled) ==
-              (!isNew3DS && initialized && !disabled));
+        /* Full View frames are drawn by the GPU too (PLAN P3.4). */
+        CHECK(PpuGpu3DS_ShouldUse(initialized, disabled, fullView) == (initialized && !disabled));
     }
     /* The 16-byte vertex stores UV as a fixed-point multiple of
      * 1/PPU_GPU3DS_UV_SCALE. That is only safe if it is lossless for every UV
@@ -408,6 +408,7 @@ int main(void) {
     CHECK(atlas[(size_t)slot0 * 64 + PpuGpu3DS_MortonIndex(2, 0)] == 0x0000);
 
     vram[64] = 17;
+    PpuGpu3DS_CacheForgetLookups(&cache); /* VRAM changed within the frame */
     CHECK(PpuGpu3DS_CacheTile(&cache, vram,
                               (PpuGpu3DSTileKey){ .vramOffset = 64,
                                                  .paletteBank = 0,

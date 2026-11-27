@@ -283,3 +283,20 @@ void sub_08057E7C(u32 unk1) {
     }
     gRoomVars.graphicsGroups[0] = unk1;
 }
+
+#ifdef PC_PORT
+/* port/port_zone_tiles.c: every zone's graphics at once, for a view wider than the GBA's that
+ * can show two zones. The zone table (CheckRegionsOnScreen's format), each set's eight
+ * (offset in gGlobalGfxAndPalettes, VRAM address) pairs of 0x1000 bytes, its palette group. */
+const u16* Port_MinishVillageZoneRegions(void) {
+    return REGION_IS_EU ? gUnk_08108050_eu : gUnk_08108050;
+}
+
+const u32* Port_MinishVillageZoneGfx(u32 set) {
+    return (REGION_IS_EU ? gUnk_081080A4_eu : gUnk_081080A4) + (set << 4);
+}
+
+u32 Port_MinishVillageZonePaletteGroup(u32 set) {
+    return gUnk_081081E4[set];
+}
+#endif

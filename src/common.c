@@ -363,6 +363,28 @@ static void StoreKeyInput(Input* input, u32 keyInput) {
     input->heldKeys = keyInput;
 }
 
+u32 Port_ResolveBgPaletteGroup(u32 group, u16* out) {
+    const PaletteGroup* paletteGroup = gPaletteGroups[group];
+    u32 mask = 0;
+    if (paletteGroup == NULL) return 0;
+    while (1) {
+        u32 pg = ROM_U32(*(const u32*)paletteGroup);
+        u32 dest = (pg >> 16) & 0xFF;
+        u32 count = (pg >> 24) & 0xF;
+        if (count == 0) count = 16;
+        const u8* src = &gGlobalGfxAndPalettes[(pg & 0xFFFF) * 32];
+        for (u32 i = 0; i < count; i++) {
+            if (dest + i < 16) {
+                memcpy(&out[(dest + i) * 16], src + i * 32, 32);
+                mask |= 1u << (dest + i);
+            }
+        }
+        if (((pg >> 24) & 0x80) == 0) break;
+        paletteGroup++;
+    }
+    return mask;
+}
+
 void LoadPaletteGroup(u32 group) {
 #ifdef PC_PORT
     if (Port_LoadPaletteGroupFromAssets(group)) {
