@@ -2099,9 +2099,9 @@ static const char* SettingValueMinWord(int setting) {
             return "重启";
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO:
-            return "原始";
+            return "宽屏+AI";
         case SS_SET_DISPLAY_STYLE:
-            return "完美像素";
+            return "点对点";
 #endif
         default:
             return "关闭";

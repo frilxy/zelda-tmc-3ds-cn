@@ -10,7 +10,7 @@
 #include <zlib.h>
 
 extern bool Port_Config_GetColorCorrection(void);
-static bool GeneratedPicturesEnabled(void) { return false; }
+extern bool Port_Config_GetWideAi(void);
 
 #define TITLE_SD "title-forest.bin"
 #define TITLE_ROMFS "romfs:/wide-scenes/title-forest.bin"
@@ -77,7 +77,7 @@ static uint32_t* sTitleAbgr;
 static bool sAbgrCorrected;
 
 bool ScenePictures_TitleAvailable(void) {
-    if (!GeneratedPicturesEnabled()) return false;
+    if (!Port_Config_GetWideAi()) return false;
     if (sAvailable < 0) sAvailable = access(TITLE_SD, F_OK) == 0 || access(TITLE_ROMFS, F_OK) == 0;
     return sAvailable != 0;
 }
@@ -323,7 +323,7 @@ static int sCaveAvailable = -1; /* as sAvailable */
 static uint8_t* sCave;
 
 bool ScenePictures_CaveAvailable(void) {
-    if (!GeneratedPicturesEnabled()) return false;
+    if (!Port_Config_GetWideAi()) return false;
     if (sCaveAvailable < 0) sCaveAvailable = access(CAVE_SD, F_OK) == 0 || access(CAVE_ROMFS, F_OK) == 0;
     return sCaveAvailable != 0;
 }
@@ -447,7 +447,7 @@ const uint16_t* ScenePictures_Shaft555(SceneShaftLayer layer, unsigned* height, 
         }
         return sShaft555[layer];
     }
-    if (!GeneratedPicturesEnabled()) return NULL; /* generated art: only WIDE + AI, checked every frame */
+    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
     if (file == NULL) return NULL;
     if (sShaft555[layer] != NULL || sShaftAvailable[layer] == 0) return sShaft555[layer];
     char sd[160], romfs[96];
@@ -524,7 +524,7 @@ const uint16_t* ScenePictures_Row555(SceneRowLayer layer, unsigned* width, unsig
     const char* file = kRows[sRowScene][layer].file;
     if (width) *width = width0;
     if (rows) rows[0] = rows0[0], rows[1] = rows0[1];
-    if (!GeneratedPicturesEnabled()) return NULL; /* generated art: only WIDE + AI, checked every frame */
+    if (!Port_Config_GetWideAi()) return NULL; /* generated art: only WIDE + AI, checked every frame */
     if (sRow555[layer] != NULL || sRowAvailable[layer] == 0) return sRow555[layer];
     char sd[160], romfs[96];
     snprintf(sd, sizeof(sd), "%s/%s", ".", file);

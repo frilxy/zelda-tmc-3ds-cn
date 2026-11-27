@@ -216,7 +216,12 @@ else()
 endif()
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
-file(MAKE_DIRECTORY "${TMC_ROMFS}")
+file(MAKE_DIRECTORY "${TMC_ROMFS}/wide-scenes")
+file(GLOB TMC_WIDE_SCENE_ASSETS CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/*.bin")
+foreach(asset IN LISTS TMC_WIDE_SCENE_ASSETS)
+    get_filename_component(asset_name "${asset}" NAME)
+    configure_file("${asset}" "${TMC_ROMFS}/wide-scenes/${asset_name}" COPYONLY)
+endforeach()
 configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/update-ca.pem" "${TMC_ROMFS}/update-ca.pem" COPYONLY)
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/romfs/splash.rgb565"

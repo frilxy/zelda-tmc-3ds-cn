@@ -249,8 +249,8 @@ void Port_Config_SetSecondScreenSwap(bool on);
 #ifdef TMC_3DS
 typedef enum {
     PORT_3DS_ASPECT_WIDE = 0,
+    PORT_3DS_ASPECT_WIDE_AI,
     PORT_3DS_ASPECT_ORIGINAL,
-    PORT_3DS_ASPECT_STRETCH,
     PORT_3DS_ASPECT_COUNT,
 } Port3DSAspectRatio;
 
@@ -267,7 +267,8 @@ void Port_Config_Cycle3DSAspectRatio(void);
 int Port_Config_Get3DSDisplayStyle(void);
 const char* Port_Config_Get3DSDisplayStyleName(void);
 void Port_Config_Cycle3DSDisplayStyle(void);
-/* Wide + Pixel Perfect selects the 400x240 gameplay view. */
+/* Both widescreen modes use Full View with the Pixel Perfect filter. */
+bool Port_Config_GetWideAi(void);
 bool Port_Config_3DSFullViewComboEnabled(void);
 int Port_Config_GetNeighbourRooms(void);
 

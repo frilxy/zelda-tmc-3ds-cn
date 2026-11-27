@@ -308,7 +308,11 @@ static bool MakePictureTexture(void) {
 
 void PortPpuGpu3DS_SetIndexedPicture(const uint8_t* indices, unsigned width, unsigned height, unsigned firstPalette) {
     if (indices == sPictureIndices && (indices == NULL || firstPalette == sPictureFirstPalette)) return;
-    if (sPictureIndices != NULL || indices != NULL) ReleasePicture();
+    if (sPictureIndices != NULL || indices != NULL) {
+        /* The previous frame can still be sampling this texture before FrameBegin. */
+        if (sPictureTex.data && !PlatformGpu3DS_BeginCustomTop()) return;
+        ReleasePicture();
+    }
     if (indices == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
         firstPalette + 4u > 16u)
         return;
@@ -358,11 +362,9 @@ static bool RefreshIndexedPicture(const PpuGpu3DSFrameView* frame) {
 
 void PortPpuGpu3DS_SetBg1Picture(const uint16_t* gbaPixels, unsigned width, unsigned height) {
     const bool corrected = Port_Config_GetColorCorrection();
-    if (sPictureIndices != NULL) {
-        if (gbaPixels == NULL) return; /* the indexed picture is not this one's to clear */
-        ReleasePicture();
-    }
+    if (sPictureIndices != NULL && gbaPixels == NULL) return; /* leave the indexed picture in place */
     if (gbaPixels == sPicturePixels && (gbaPixels == NULL || corrected == sPictureCorrected)) return;
+    if (sPictureTex.data && !PlatformGpu3DS_BeginCustomTop()) return;
     ReleasePicture();
     if (gbaPixels == NULL || width > PPU_GPU3DS_PICTURE_TEX_WIDTH || height > PPU_GPU3DS_PICTURE_TEX_HEIGHT ||
         !MakePictureTexture())
@@ -383,7 +385,10 @@ void PortPpuGpu3DS_SetScrollPicture(unsigned bg, const uint16_t* gbaPixels, unsi
     const bool corrected = Port_Config_GetColorCorrection();
     if (gbaPixels == sScrollPixels[bg] && (gbaPixels == NULL || corrected == sScrollCorrected[bg])) return;
     C3D_Tex* const tex = &sScrollTex[bg];
-    if (tex->data) C3D_TexDelete(tex);
+    if (tex->data) {
+        if (!PlatformGpu3DS_BeginCustomTop()) return;
+        C3D_TexDelete(tex);
+    }
     memset(tex, 0, sizeof(*tex));
     sScrollPixels[bg] = NULL;
     sBoundTexture = UINT8_MAX; /* rebind */

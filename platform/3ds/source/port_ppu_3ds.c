@@ -1232,7 +1232,7 @@ static void PresentFrame(void) {
         if (gMain.task != TASK_FILE_SELECT) ScenePictures_ReleaseCave();
         /* The Crenel paths' shaft: its three layers' strips as their BGs (the ground's, BG1's ledges, BG3's shadows),
          * at the room's place. */
-        int shaftX, shaftY[SCENE_SHAFT_LAYERS];
+        int shaftX = 0, shaftY[SCENE_SHAFT_LAYERS];
         const int groundBg = wideFrame ? ScenePictures_ShaftView(&shaftX, shaftY) : -1;
         const int layerBg[SCENE_SHAFT_LAYERS] = { groundBg, 1, 3 };
         bool used[4] = { false, false, false, false };

@@ -14,15 +14,19 @@
     } while (0)
 
 int main(void) {
-    static const char* const aspectNames[] = { "wide", "original", "stretch" };
+    static const char* const aspectNames[] = { "wide", "wide-ai", "original" };
     static const char* const displayNames[] = {
         "blur", "bilinear", "pixel-perfect"
     };
     static const char* const displayLabels[] = {
-        "BLUR", "BILINEAR", "PIXEL PERFECT"
+        "模糊", "双线性", "点对点"
     };
 
-    CHECK(CONFIG_3DS_DEFAULT_ASPECT == PORT_3DS_ASPECT_STRETCH);
+    CHECK(CONFIG_3DS_DEFAULT_ASPECT == PORT_3DS_ASPECT_WIDE);
+    CHECK(ConfigValues3DS_ParseAspect("stretch") == PORT_3DS_ASPECT_WIDE);
+    CHECK(ConfigValues3DS_IsWide(PORT_3DS_ASPECT_WIDE));
+    CHECK(ConfigValues3DS_IsWide(PORT_3DS_ASPECT_WIDE_AI));
+    CHECK(!ConfigValues3DS_IsWide(PORT_3DS_ASPECT_ORIGINAL));
     CHECK(CONFIG_3DS_DEFAULT_DISPLAY == PORT_3DS_DISPLAY_BILINEAR);
     for (int i = 0; i < PORT_3DS_ASPECT_COUNT; ++i) {
         CHECK(strcmp(ConfigValues3DS_AspectName((Port3DSAspectRatio)i), aspectNames[i]) == 0);

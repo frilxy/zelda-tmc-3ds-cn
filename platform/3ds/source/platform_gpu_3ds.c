@@ -123,6 +123,7 @@ static u32 TopClearColor(void) {
     return C2D_Color32(BAR_STEP(r), BAR_STEP(g), BAR_STEP(b), 255);
 #undef BAR_STEP
 }
+extern bool Port_Config_GetWideAi(void);
 extern int Port_Config_Get3DSAspectRatio(void);
 extern int Port_Config_Get3DSDisplayStyle(void);
 extern bool Port_Config_3DSFullViewComboEnabled(void);
@@ -1116,40 +1117,33 @@ static void LoadScenePicture(ScenePicture* picture) {
                ScenePictures_ReadFile(picture->path, picture->romfsPath, pixels, count * sizeof(uint16_t))) {
         got = count;
     }
-    const size_t texBytes = (size_t)picture->texWidth * picture->texHeight * sizeof(uint32_t);
-    uint32_t* linear = got == count ? linearAlloc(texBytes) : NULL;
-    if (linear == NULL) {
+    if (got != count || !C3D_TexInit(&picture->texture, picture->texWidth, picture->texHeight, GPU_RGBA8)) {
         free(pixels);
         return;
     }
-    /* Into the texture the way the game's frame goes (DrawTopImage): a linear RGBA8 picture in
-     * the frame's pixel order, tiled by the display transfer. */
-    memset(linear, 0, texBytes);
+    /* Write in Morton order so there is no DMA source to keep alive after this frame. */
+    uint32_t* texels = picture->texture.data;
+    memset(texels, 0, picture->texture.size);
     for (unsigned r = 0; r < picture->height; ++r) {
         for (unsigned x = 0; x < picture->width; ++x) {
             /* Back to the GBA's 15-bit colour (the picture keeps the game's palette). */
             const uint16_t c = pixels[r * picture->width + x];
             const uint16_t gba = (uint16_t)(((c >> 11) & 31u) | ((((c >> 5) & 63u) >> 1) << 5) | ((c & 31u) << 10));
-            linear[r * picture->texWidth + x] = virtuappu_mode1_rgb555_to_abgr8888(gba);
+            const size_t tile = (size_t)(r >> 3) * (picture->texWidth >> 3) + (x >> 3);
+            const size_t offset = tile * 64u + PpuGpu3DS_MortonIndex(x & 7u, r & 7u);
+            texels[offset] = virtuappu_mode1_rgb555_to_abgr8888(gba);
         }
     }
     free(pixels);
-    if (C3D_TexInit(&picture->texture, picture->texWidth, picture->texHeight, GPU_RGBA8)) {
-        Platform3DS_CleanDataCache(linear, texBytes);
-        SplitFlushed();
-        C3D_SyncDisplayTransfer((u32*)linear, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
-                                (u32*)picture->texture.data, GX_BUFFER_DIM(picture->texWidth, picture->texHeight),
-                                TextureTransfer());
-        C3D_TexSetFilter(&picture->texture, GPU_NEAREST, GPU_NEAREST);
-        picture->corrected = Port_Config_GetColorCorrection();
-        picture->state = 1;
-    }
-    linearFree(linear);
+    C3D_TexFlush(&picture->texture);
+    C3D_TexSetFilter(&picture->texture, GPU_NEAREST, GPU_NEAREST);
+    picture->corrected = Port_Config_GetColorCorrection();
+    picture->state = 1;
 }
 
 /* Whether the scene's picture can be drawn this frame; frees it when the scene is not shown. */
 static bool ScenePictureReady(ScenePicture* picture, bool shown) {
-    if (!picture->procedural) shown = false;
+    if (!picture->procedural && !Port_Config_GetWideAi()) shown = false;
     if (picture->state == 1 && (!shown || picture->corrected != Port_Config_GetColorCorrection())) {
         C3D_TexDelete(&picture->texture);
         picture->state = 0;
@@ -1296,8 +1290,9 @@ static bool CaveReady(bool shown) {
 static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bool abgrAfter) {
     int pictureX, pictureY, portalIndex = 0;
     const bool portal = Port_Widescreen_CutsceneStrips(&pictureX, &pictureY, &portalIndex);
-    const bool title = frameW == 240 && frameH == 160 && Port_Widescreen_TitleForestShown();
-    const bool cave = frameW == 240 && frameH == 160 && Port_Widescreen_FileSelectCaveShown();
+    const bool aiNative = Port_Config_GetWideAi() && frameW == 240 && frameH == 160;
+    const bool title = aiNative && Port_Widescreen_TitleForestShown();
+    const bool cave = aiNative && Port_Widescreen_FileSelectCaveShown();
     const bool pause = frameW == 240 && frameH == 160 && Port_Widescreen_PauseBackgroundShown();
     bool portalReady = false;
     for (int i = 0; i < PORTAL_PICTURES; ++i) {
@@ -1498,6 +1493,7 @@ static struct {
     int style;
     unsigned width;
     bool overlay;
+    bool generatedArt;
 } sTopLayout;
 static unsigned sTopClearFrames = 3;
 
@@ -1505,7 +1501,8 @@ void PlatformGpu3DS_InvalidateTopBorder(void) { sTopClearFrames = 3; }
 
 static void TopLayoutChanged(float x, float y, float w, float h, int style,
                              unsigned width, bool overlay) {
-    if (sTopLayout.x != x || sTopLayout.y != y || sTopLayout.w != w ||
+    const bool generatedArt = Port_Config_GetWideAi();
+    if (sTopLayout.generatedArt != generatedArt || sTopLayout.x != x || sTopLayout.y != y || sTopLayout.w != w ||
         sTopLayout.h != h || sTopLayout.style != style ||
         sTopLayout.width != width || sTopLayout.overlay != overlay) {
         sTopLayout.x = x;
@@ -1515,6 +1512,7 @@ static void TopLayoutChanged(float x, float y, float w, float h, int style,
         sTopLayout.style = style;
         sTopLayout.width = width;
         sTopLayout.overlay = overlay;
+        sTopLayout.generatedArt = generatedArt;
         sTopClearFrames = 3;
     }
 }

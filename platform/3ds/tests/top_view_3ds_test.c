@@ -114,6 +114,16 @@ int main(void) {
     CHECK(plan.drawX == 20 && plan.drawWidth == 360 && plan.linearFilter);
     CHECK(!plan.useSharpBilinear);
 
+    TopView3DS_BuildPlan(0, 1, TOP_VIEW_3DS_ASPECT_WIDE_AI,
+                         TOP_VIEW_3DS_DISPLAY_PIXEL_PERFECT,
+                         PORT_3DS_FULL_VIEW_OUTDOOR_1X, 400, 240, 400, 240, 0, 0, &plan);
+    CHECK(plan.mode == PORT_3DS_FULL_VIEW_OUTDOOR_1X);
+    CHECK(plan.drawWidth == 400 && plan.drawHeight == 240);
+    TopView3DS_BuildPlan(0, 0, TOP_VIEW_3DS_ASPECT_WIDE_AI,
+                         TOP_VIEW_3DS_DISPLAY_BILINEAR,
+                         PORT_3DS_FULL_VIEW_FALLBACK, 266, 160, 266, 160, 0, 0, &plan);
+    CHECK(plan.drawWidth == 400 && plan.drawHeight == 240 && plan.useSharpBilinear);
+
     puts("top_view_3ds_test: PASS");
     return EXIT_SUCCESS;
 }

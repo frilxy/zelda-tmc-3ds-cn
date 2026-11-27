@@ -183,7 +183,7 @@ static void SaveConfig(void) {
     fprintf(file, "hold_to_advance_text=%u\n", sHoldText ? 1u : 0u);
     fprintf(file, "color_correction=%u\n", sColorCorrection ? 1u : 0u);
     fprintf(file, "autosave=%u\n", sAutosave ? 1u : 0u);
-    fprintf(file, "widescreen=%u\n", sAspectRatio == PORT_3DS_ASPECT_WIDE ? 1u : 0u);
+    fprintf(file, "widescreen=%u\n", Port_Config_WidescreenEnabled() ? 1u : 0u);
     fprintf(file, "screen_aspect=%s\n", ConfigValues3DS_AspectName(sAspectRatio));
     fprintf(file, "display_style=%s\n", ConfigValues3DS_DisplayName(sDisplayStyle));
     fprintf(file, "neighbour_rooms=%u\n", sNeighbourRooms ? 1u : 0u);
@@ -429,7 +429,7 @@ float Port_Config_TouchScale(void) { return 1.0f; }
 void Port_Config_SetTouchScale(float scale) { (void)scale; }
 float Port_Config_TouchOpacity(void) { return 1.0f; }
 void Port_Config_SetTouchOpacity(float opacity) { (void)opacity; }
-bool Port_Config_WidescreenEnabled(void) { return sAspectRatio == PORT_3DS_ASPECT_WIDE; }
+bool Port_Config_WidescreenEnabled(void) { return ConfigValues3DS_IsWide(sAspectRatio); }
 void Port_Config_SetWidescreenEnabled(bool enabled) {
     sAspectRatio = enabled ? PORT_3DS_ASPECT_WIDE : PORT_3DS_ASPECT_ORIGINAL;
     SaveConfig();
@@ -609,7 +609,11 @@ void Port_Config_SetTurboMultiplier(unsigned multiplier) {
 
 int Port_Config_Get3DSAspectRatio(void) { return (int)sAspectRatio; }
 const char* Port_Config_Get3DSAspectRatioName(void) {
-    static const char* const names[PORT_3DS_ASPECT_COUNT] = { "宽屏", "原始", "拉伸" };
+    static const char* const names[PORT_3DS_ASPECT_COUNT] = {
+        [PORT_3DS_ASPECT_WIDE] = "宽屏",
+        [PORT_3DS_ASPECT_WIDE_AI] = "宽屏+AI",
+        [PORT_3DS_ASPECT_ORIGINAL] = "原始",
+    };
     return names[sAspectRatio];
 }
 void Port_Config_Cycle3DSAspectRatio(void) {
@@ -624,13 +628,17 @@ void Port_Config_Cycle3DSDisplayStyle(void) {
     sDisplayStyle = (Port3DSDisplayStyle)((sDisplayStyle + 1) % PORT_3DS_DISPLAY_COUNT);
     SaveConfig();
 }
+bool Port_Config_GetWideAi(void) {
+    return sAspectRatio == PORT_3DS_ASPECT_WIDE_AI && sDisplayStyle == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+}
+
 bool Port_Config_3DSFullViewComboEnabled(void) {
     /* Load each atomic once so a bottom-screen option tap can only select one
      * complete policy on this call. A mixed/transient value fails closed on
      * the following scene latch before any 400x240 geometry is published. */
     const Port3DSAspectRatio aspect = sAspectRatio;
     const Port3DSDisplayStyle style = sDisplayStyle;
-    return aspect == PORT_3DS_ASPECT_WIDE && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
+    return ConfigValues3DS_IsWide(aspect) && style == PORT_3DS_DISPLAY_PIXEL_PERFECT;
 }
 
 int Port_Config_GetNeighbourRooms(void) { return sNeighbourRooms; }

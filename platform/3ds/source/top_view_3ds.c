@@ -55,6 +55,7 @@ void TopView3DS_BuildPlan(int old3DS, int fullViewComboEnabled,
                 result.drawWidth = 360;
                 break;
             case TOP_VIEW_3DS_ASPECT_WIDE:
+            case TOP_VIEW_3DS_ASPECT_WIDE_AI:
             default:
                 result.drawWidth = result.source.sourceWidth >= 266 ? 400 : 360;
                 break;

@@ -1,5 +1,11 @@
 # 更新日志（中文版）
 
+## v2.2.6
+
+- 「显示方式」中的「完美像素」改译为「点对点」。
+- 「宽高比」新增「宽屏+AI」。配合「点对点」可显示标题、选档、部分缩小传送和小人路径的 AI 补景。
+- 移除「拉伸」选项。已有拉伸设置会自动读取为普通宽屏。
+
 ## v2.2.5
 
 - 上屏加入 400×240 Full View，宽屏与完美像素组合下可显示相连房间，并改善对话、切场和部分特效的呈现。
@@ -86,8 +92,6 @@
 
 ## Changelog
 
-- 400x240 Full View and connected rooms.
-- Stereoscopic 3D and world depth toggle.
-- GPU rendering and fade optimizations.
-- New splash and rotating Triforce.
-- CIA-only builds.
+- Rename the Pixel Perfect display label.
+- Add optional AI widescreen scenery.
+- Replace legacy Stretch with Wide.

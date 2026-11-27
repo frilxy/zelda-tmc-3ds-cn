@@ -25,7 +25,8 @@ https://discord.gg/SMW49UMkw
 * Native Nintendo 3DS port with full dual-screen support.
 * Supports USA, European, clean Japanese, and Angel Team Chinese SP4 ROM profiles with automatic detection.
 * Includes native [European gameplay backports](docs/eu-backport.md); no patched ROM is required.
-* True widescreen gameplay on the 400x240 top screen, plus Original and Stretch display modes.
+* Top-screen aspect modes: Wide, Wide + AI and Original. Both Wide modes use the 400×240 Full View with Pixel Perfect (`点对点`).
+* Wide + AI displays generated margins from [tinaut1986 v0.4.7](https://github.com/tinaut1986/zelda-tmc-3ds/tree/v0.4.7) in supported scenes.
 * Bottom-screen interface with live map, dungeon information, quest status, touch item controls, and settings.
   The opening Picori legend keeps the bottom screen black; the overworld map
   shows only its stone frame until Link receives it.
