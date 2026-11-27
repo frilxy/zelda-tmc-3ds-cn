@@ -1078,6 +1078,44 @@ static void DrawTopImage(const uint32_t* pixels, unsigned width, unsigned height
         TopBlurDraw(&blur, true);
     }
     DrawScenePictures(plan.drawX, plan.drawY, plan.drawWidth, plan.drawHeight, true);
+    if (Port_Config_GetShowFps()) DrawFpsOverlay();
+}
+
+/* Pictures that extend a scene the GBA drew at 240x160 (docs/wide-scene-extension.md), drawn only
+ * outside the game's own picture: generated extensions shipped in the romfs
+ * (platform/3ds/assets/wide-scenes/), or the player's own in the data folder, which wins. RGB565
+ * as tools/scene-extend/to_console.py writes them, put through the game's own colour conversion
+ * (colour correction included) and drawn with the frame's ABGR env. A texture lives only while its
+ * scene is on screen, and is made again when colour correction changes. */
+typedef struct ScenePicture {
+    const char* path;      /* the player's own, in the data folder: it wins */
+    const char* romfsPath; /* the one the game ships */
+    unsigned width, height, texWidth, texHeight;
+    C3D_Tex texture;
+    int state;      /* 0 not tried, 1 loaded, -1 no file */
+    bool corrected; /* the colour correction the texture was made with */
+    bool procedural; /* made by code from the game's own art, no generative AI: WIDE is enough */
+    const uint16_t* (*make)(void); /* made by the game instead of read from a file: GBA colours, 0 where nothing */
+} ScenePicture;
+
+static void LoadScenePicture(ScenePicture* picture) {
+    picture->state = -1;
+    if (picture->path == NULL && picture->make == NULL) return;
+    const size_t count = (size_t)picture->width * picture->height;
+    const uint16_t* made = picture->make ? picture->make() : NULL;
+    uint16_t* pixels = malloc(count * sizeof(uint16_t));
+    size_t got = 0;
+    if (pixels != NULL && made != NULL) {
+        /* As a file has it (RGB565), for the loop below. */
+        for (size_t i = 0; i < count; ++i) {
+            const uint16_t c = made[i];
+            pixels[i] = (uint16_t)(((c & 31u) << 11) | (((c >> 5) & 31u) << 6) | ((c >> 10) & 31u));
+        }
+        got = count;
+    } else if (pixels != NULL && picture->path != NULL &&
+               ScenePictures_ReadFile(picture->path, picture->romfsPath, pixels, count * sizeof(uint16_t))) {
+        got = count;
+    }
     const size_t texBytes = (size_t)picture->texWidth * picture->texHeight * sizeof(uint32_t);
     uint32_t* linear = got == count ? linearAlloc(texBytes) : NULL;
     if (linear == NULL) {
