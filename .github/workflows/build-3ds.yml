@@ -103,15 +103,14 @@ jobs:
             echo "::error::tag ${TAG} does not match platform/3ds/version.txt (v${VERSION})"
             exit 1
           fi
-          case "${VERSION}" in
-            *-E*)
-              echo "This tag is a pre-release."
-              echo "PRERELEASE=true" >> "${GITHUB_ENV}"
-              ;;
-            *)
-              echo "PRERELEASE=false" >> "${GITHUB_ENV}"
-              ;;
-          esac
+          # Numeric tags can opt into prerelease without changing the updater's version format.
+          git fetch --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          tag_notes="$(git for-each-ref --format='%(contents:body)%0a%(contents:subject)' "refs/tags/${TAG}")"
+          if [[ "${VERSION}" == *-E* ]] || grep -Fxq 'Prerelease: true' <<< "${tag_notes}"; then
+            echo "PRERELEASE=true" >> "${GITHUB_ENV}"
+          else
+            echo "PRERELEASE=false" >> "${GITHUB_ENV}"
+          fi
 
       - name: Download built CIA
         uses: actions/download-artifact@v8
@@ -130,28 +129,28 @@ jobs:
           test -f "dist/tmc-3ds-v${VERSION}.cia"
           (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" > SHA256SUMS.txt)
 
-          # The QR is a convenience, never a gate: apt once hung here for
-          # 15+ minutes and blocked a release that had already compiled.
-          if command -v qrencode >/dev/null 2>&1 ||
-             { timeout 90 sudo apt-get update -qq &&
-               timeout 120 sudo apt-get install -y -qq qrencode; }; then
-            if command -v qrencode >/dev/null 2>&1; then
-              qrencode -o "dist/QR-${TAG}-github.png" -s 6 -m 2 \
-                "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
-            else
-              echo "qrencode unavailable; skipping the QR asset"
-            fi
-          else
-            echo "package install timed out; skipping the QR asset"
-          fi
+          python3 -m pip install --disable-pip-version-check --quiet --target "${RUNNER_TEMP}/qr-python" segno==1.6.6
+          PYTHONPATH="${RUNNER_TEMP}/qr-python" python3 -m segno --error M --scale 10 --border 4 \
+            --output "dist/QR-${TAG}-github.png" \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
 
       - name: Write release notes
         run: |
           set -euo pipefail
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
-          # Published verbatim: the on-device changelog view starts at the
-          # file's own "## Changelog" heading, which must stay ASCII-only.
-          cp CHANGELOG-cn.md release-notes.md
+          TAG="${GITHUB_REF_NAME}"
+          {
+            printf '![在 FBI 中扫码安装](https://github.com/%s/releases/download/%s/QR-%s-github.png)\n\n' \
+              "${GITHUB_REPOSITORY}" "${TAG}" "${TAG}"
+            printf 'FBI → Remote Install → Scan QR Code\n\n'
+            awk -v heading="## ${TAG}" '
+              $0 == heading { current=1; next }
+              /^## / { current=0 }
+              /^## Changelog$/ { device=1 }
+              current || device
+            ' CHANGELOG-cn.md
+          } > release-notes.md
+          python3 scripts/dev/check_release_notes.py release-notes.md
           echo "TMCPORTVERSION=${VERSION}" >> "${GITHUB_ENV}"
 
       - name: Create release

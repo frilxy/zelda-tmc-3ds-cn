@@ -1,5 +1,13 @@
 # 更新日志（中文版）
 
+## v2.2.5
+
+- 上屏加入 400×240 Full View，宽屏与完美像素组合下可显示相连房间，并改善对话、切场和部分特效的呈现。
+- 加入由 3DS 滑杆控制的裸眼立体效果，并提供独立的「3D景深」选项。
+- 移植 GPU 绘制缓存、提前准备下一帧及 GPU 淡入淡出等渲染优化。
+- 加载页换为完整标志与旋转的金色三角力量动画。
+- 3DS 构建和发行只生成 CIA 安装包。
+
 ## v2.2.4
 
 ### 修复
@@ -78,10 +86,8 @@
 
 ## Changelog
 
-- Bottom-screen font, palette and layout
-  work.
-- Selected floor wears the same red
-  cursor brackets as the items grid.
-- White text rendered yellow: the theme
-  file had the GBA 15-bit RGB() macro.
-
+- 400x240 Full View and connected rooms.
+- Stereoscopic 3D and world depth toggle.
+- GPU rendering and fade optimizations.
+- New splash and rotating Triforce.
+- CIA-only builds.
