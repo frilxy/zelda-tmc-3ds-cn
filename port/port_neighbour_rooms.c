@@ -17,8 +17,6 @@
 
 #include <string.h>
 
-extern void DebugLog_Printf(const char* fmt, ...);
-
 /* The window of tiles around the current room, in tiles from its origin: the room (up to 128x96 tiles) and
  * a whole 400x240 view each side, since a border scroll starts with the view still in the outgoing room
  * (it runs with the incoming room already current) and the cells beside that one need their rooms too. */
@@ -216,9 +214,6 @@ static void Build(void) {
             }
         }
     }
-    DebugLog_Printf("neighbours: area %u room %u (%dx%d tiles): %u drawn, %u apart, %u other tileset, %u unreadable, %u cells",
-                    gRoomControls.area, gRoomControls.room, curW, curH, sStats.neighbours, sStats.apart, sStats.otherTileset,
-                    sStats.unreadable, sStats.cells);
 }
 
 /* The neighbours' ARCHWAY objects. A door's frame is a sprite over placeholder tiles (drawn as "カベ", wall), so a
@@ -513,8 +508,6 @@ static void BuildFlatBorder(int w, int h) {
     for (int s = 0; s < 4; ++s) sBorder.side[s] = 1;
     sBorder.flat = 1;
     sBorder.on = 1;
-    DebugLog_Printf("border: flat on the top layer, area %u room %u base %u, %u pebble tiles", gRoomControls.area,
-                    gRoomControls.room, sBorder.base, sBorder.altCount);
 }
 
 static void BuildBorder(void) {
@@ -626,9 +619,6 @@ static void BuildBorder(void) {
     if (sBorder.decorCount && q < 16) q = 16;
     sBorder.densityQ = q > 42 ? 42 : q;
     sBorder.on = 1;
-    DebugLog_Printf("border: %u alt; area %u room %u base %u, sides %u%u%u%u, %u stones of %u kinds on %u base cells, density %u/256",
-                    sBorder.altCount, gRoomControls.area, gRoomControls.room, sBorder.base, sBorder.side[0], sBorder.side[1],
-                    sBorder.side[2], sBorder.side[3], decorCells, sBorder.decorCount, baseCells, sBorder.densityQ);
 }
 
 static uint16_t BorderTile(int topLayer, int column, int row, uint16_t blank) {
