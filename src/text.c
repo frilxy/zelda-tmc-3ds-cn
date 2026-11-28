@@ -1023,7 +1023,7 @@ u32 sub_0805F9A0(u32 r0) {
 
 #ifdef TMC_3DS
 void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
-                             const u32* palette) {
+                             const uint32_t* palette) {
     extern const u8 gUnk_08129004[];
     const u8* const font = gUnk_08129004;
     /* The original ShowTextBox destination is in BG1. Reconstruct its origin,
