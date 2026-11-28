@@ -1111,13 +1111,16 @@ typedef void (*ListCellFn)(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
                            int32_t cy, int32_t side, int32_t scale, const void* ctx);
 
 static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t dstX, int32_t dstY,
-                    int32_t dstW, int32_t dstH, int32_t count, ListCellFn fill, const void* ctx) {
+                    int32_t dstW, int32_t dstH, const char* title, int32_t count, ListCellFn fill, const void* ctx) {
     int32_t scale, pad, innerX, innerY, innerW, innerH;
     int32_t cols, rows, cell, gap, gridW, gridH, ox, oy, i;
 
+#ifndef TMC_3DS
+    (void)title;
     if (count <= 0) {
         return 0;
     }
+#endif
     scale = (dstW < dstH ? dstW : dstH) / 200;
     if (scale < 1) {
         scale = 1;
@@ -1129,6 +1132,17 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
     innerY = dstY + 3 * pad / 2;
     innerW = dstW - 3 * pad;
     innerH = dstH - 3 * pad;
+#ifdef TMC_3DS
+    /* Draw directly on the stone header and keep the grid clear of both
+     * the heading and the existing Back button. */
+    const int32_t titleW = Port_SecondScreenTheme_TitleTextWidth(title, scale);
+    const int32_t titleY = Port_SecondScreenTheme_InkTopForCenter(innerY + 8 * scale, scale, SS_FACE_LARGE);
+    Port_SecondScreenTheme_DrawTitleText(pixels, bufW, bufH, stride, dstX + (dstW - titleW) / 2, titleY, scale,
+                                         SS_TEXT_NAVY, title);
+    if (count <= 0) return 1;
+    innerY += 24 * scale;
+    innerH -= (24 + 16) * scale;
+#endif
 
     /* Widest grid whose cells still fit the rect: more columns means smaller
      * cells, so walk up from one and keep the last that beats the previous. */
@@ -1254,7 +1268,8 @@ int Port_SecondScreenQuest_DrawKinstones(uint32_t* pixels, int32_t bufW, int32_t
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, KinstoneRowCount(snap), KinstoneListCell, snap);
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "幸福碎片", KinstoneRowCount(snap),
+                    KinstoneListCell, snap);
 }
 
 /* --- SWORD TECHNIQUES (pause screen 8) --- */
@@ -1288,5 +1303,6 @@ int Port_SecondScreenQuest_DrawTechniques(uint32_t* pixels, int32_t bufW, int32_
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, TECHNIQUE_COUNT, TechniqueListCell, snap);
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "剑技", TECHNIQUE_COUNT, TechniqueListCell,
+                    snap);
 }

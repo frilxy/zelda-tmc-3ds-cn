@@ -324,6 +324,13 @@ u32 IsItemEquipped(u32 itemId) {
     /* When a soft-slot (X/Y/L2/R2) is currently active and assigned this
      * item, report it as B-equipped so held-item code paths (lantern stay-
      * lit, magic boomerang return, gust-jar charge) behave normally. */
+#ifdef TMC_3DS
+    /* The lantern needs its actual binding after the button is released. */
+    if (itemId == ITEM_LANTERN_OFF || itemId == ITEM_LANTERN_ON) {
+        if (Port_SoftSlots_GetAssignment(0) == itemId) return EQUIP_SLOT_X;
+        if (Port_SoftSlots_GetAssignment(1) == itemId) return EQUIP_SLOT_Y;
+    } else
+#endif
     if (Port_SoftSlots_IsBHeld() && Port_SoftSlots_GetEffectiveBItem(0xFF) == itemId) {
         return EQUIP_SLOT_B;
     }
@@ -372,7 +379,50 @@ void PutItemOnSlot(u32 itemId) {
     }
 }
 
+#ifdef TMC_3DS
+/* Match the fork: a menu item occupies at most one button. Moving it
+ * between buttons swaps the previous assignment on the destination back. */
+static void EquipButton(uint32_t button, uint32_t itemId) {
+    if (button > 3 || itemId > ITEM_BOTTLE4 || (itemId == ITEM_NONE && button < 2)) return;
+    uint8_t equipped[] = {gSave.stats.equipped[SLOT_A], gSave.stats.equipped[SLOT_B],
+                           Port_SoftSlots_GetAssignment(0), Port_SoftSlots_GetAssignment(1)};
+    if (itemId) {
+        const uint8_t menuSlot = gItemMetaData[itemId].menuSlot;
+        uint8_t replacement = equipped[button];
+        if (replacement > ITEM_BOTTLE4 || (replacement && gItemMetaData[replacement].menuSlot == menuSlot))
+            replacement = ITEM_NONE;
+        for (unsigned i = 0; i < 4; ++i) {
+            if (i != button && equipped[i] && equipped[i] <= ITEM_BOTTLE4 && gItemMetaData[equipped[i]].menuSlot == menuSlot) {
+                equipped[i] = replacement;
+                replacement = ITEM_NONE;
+            }
+        }
+    }
+    equipped[button] = itemId;
+    gSave.stats.equipped[SLOT_A] = equipped[0];
+    gSave.stats.equipped[SLOT_B] = equipped[1];
+    for (int i = 0; i < 2; ++i) {
+        const uint8_t item = equipped[i + 2];
+        if ((item && item != Port_SoftSlots_GetAssignment(i)) || (!item && !itemId && (unsigned)i + 2 == button) ||
+            (!item && Port_SoftSlots_GetAssignment(i))) Port_SoftSlots_SetAssignment(i, item);
+    }
+    gHUD.unk_13 = 0x7f;
+    gHUD.unk_14 = 0x7f;
+}
+
+void Port_EquipButton(uint32_t button, uint32_t itemId) {
+    if (itemId <= ITEM_BOTTLE4 && (!itemId || GetInventoryValue(itemId == ITEM_LANTERN_ON ? ITEM_LANTERN_OFF : itemId) == 1))
+        EquipButton(button, itemId);
+}
+#endif
+
 void ForceEquipItem(u32 itemId, u32 equipSlot) {
+#ifdef TMC_3DS
+    if (itemId && equipSlot < EQUIP_SLOT_NONE) EquipButton(equipSlot, itemId);
+    else if ((itemId == ITEM_LANTERN_ON || itemId == ITEM_LANTERN_OFF) &&
+             (equipSlot == EQUIP_SLOT_X || equipSlot == EQUIP_SLOT_Y))
+        EquipButton(2 + equipSlot - EQUIP_SLOT_X, itemId);
+#else
     u32 otherItem;
     u32 otherItemSlot;
     u32 replacedItem;
@@ -389,6 +439,7 @@ void ForceEquipItem(u32 itemId, u32 equipSlot) {
         gHUD.unk_13 = 0x7f;
         gHUD.unk_14 = 0x7f;
     }
+#endif
 }
 
 u32 SetBottleContents(u32 itemId, u32 bottleIndex) {

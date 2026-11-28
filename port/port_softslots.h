@@ -27,6 +27,13 @@ void Port_SoftSlots_Init(void);
 /* Polled once per frame from Port_UpdateInput. Reads the four soft-slot
  * inputs and decides which (if any) is the current active slot. */
 void Port_SoftSlots_Update(void);
+#ifdef TMC_3DS
+/* The platform supplies low bits X=1 and Y=2. All calls are on the game thread. */
+void Port_SoftSlots_SetXyInput(unsigned heldMask, unsigned downMask);
+void Port_SoftSlots_UpdateXy(bool enabled, bool physicalB);
+bool Port_SoftSlots_XyPressed(void);
+void Port_EquipButton(uint32_t button, uint32_t itemId); /* A, B, X, Y; zero clears X/Y */
+#endif
 
 /* True iff a soft-slot button is held with an item assigned. The port
  * input layer ORs B_BUTTON into KEYINPUT in this case so the engine sees

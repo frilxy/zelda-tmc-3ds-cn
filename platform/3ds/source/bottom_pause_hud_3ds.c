@@ -7,9 +7,9 @@
 enum {
     SCREEN_WIDTH = 320,
     SCREEN_HEIGHT = 240,
-    STATUS_CENTER_X = 261,
+    STATUS_CENTER_X = 265,
     HEART_SIZE = 8,
-    HEARTS_PER_ROW = 7,
+    HEARTS_PER_ROW = 10,
     ITEM_SIZE = 16,
 };
 
@@ -65,7 +65,7 @@ static void DrawCounter(uint32_t* pixels, int stride, int y, int icon, unsigned 
 void BottomPauseHud3DS_DrawStatus(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap) {
     if (pixels == NULL || stride < SCREEN_WIDTH || snap == NULL || !snap->inGame) return;
 
-    DrawStatusLabel(pixels, stride, "状态", 60);
+    DrawStatusLabel(pixels, stride, "生命", 60);
     DrawHearts(pixels, stride, snap);
     DrawCounter(pixels, stride, 110, SST_RUPEE_WALLET0 + (snap->walletType & 3), snap->rupees, 3,
                 snap->walletMax != 0 && snap->rupees >= snap->walletMax);
@@ -84,7 +84,15 @@ static void DrawEquipmentSlot(uint32_t* pixels, int stride, int left, int right,
     const int width = right - left;
     const int height = BOTTOM_PAUSE_HUD_EQUIPMENT_Y1 - BOTTOM_PAUSE_HUD_EQUIPMENT_Y0;
     uint32_t* slot = pixels + BOTTOM_PAUSE_HUD_EQUIPMENT_Y0 * stride + left;
-    DrawSprite(slot, stride, width, height, 0, 4, badge);
+    if (badge >= 0) {
+        DrawSprite(slot, stride, width, height, 1, 4, badge);
+    } else {
+        const char* label = badge == -1 ? "X" : "Y";
+        Port_SecondScreenTheme_DrawMenuButton(slot, width, height, stride, 0, 4, 16, 15, "", 0);
+        const int textW = Port_SecondScreenTheme_BigTextWidth(label, 1);
+        Port_SecondScreenTheme_DrawBigText(slot, width, height, stride, (16 - textW) / 2,
+            Port_SecondScreenTheme_InkTopForCenter(11, 1, SS_FACE_BODY), 1, SS_TEXT_NAVY, label);
+    }
 
     if (item >= ITEM_BOTTLE1 && item <= ITEM_BOTTLE4) {
         const uint8_t content = snap->bottleContents[item - ITEM_BOTTLE1];
@@ -105,8 +113,10 @@ static void DrawEquipmentSlot(uint32_t* pixels, int stride, int left, int right,
 void BottomPauseHud3DS_DrawEquipment(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap) {
     if (pixels == NULL || stride < SCREEN_WIDTH || snap == NULL || !snap->inGame) return;
 
-    DrawEquipmentSlot(pixels, stride, BOTTOM_PAUSE_HUD_A_X0, BOTTOM_PAUSE_HUD_A_X1, SST_BUTTON_A, snap,
-                      snap->equippedA);
-    DrawEquipmentSlot(pixels, stride, BOTTOM_PAUSE_HUD_B_X0, BOTTOM_PAUSE_HUD_B_X1, SST_BUTTON_B, snap,
-                      snap->equippedB);
+    const uint8_t items[] = {snap->equippedA, snap->equippedB, snap->equippedX, snap->equippedY};
+    static const int badges[] = {SST_BUTTON_A, SST_BUTTON_B, -1, -2};
+    for (int i = 0; i < 4; ++i) {
+        const int left = BOTTOM_PAUSE_HUD_EQUIPMENT_X0 + i * BOTTOM_PAUSE_HUD_EQUIPMENT_PITCH;
+        DrawEquipmentSlot(pixels, stride, left, left + BOTTOM_PAUSE_HUD_EQUIPMENT_WIDTH, badges[i], snap, items[i]);
+    }
 }

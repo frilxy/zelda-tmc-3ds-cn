@@ -54,6 +54,9 @@ typedef struct {
     uint8_t room;
     uint8_t equippedA;
     uint8_t equippedB;
+#ifdef TMC_3DS
+    uint8_t equippedX, equippedY;
+#endif
     /* Menu slot (grid index) each equipped item lives in, 0xFF if none.
      * Published alongside the raw ids because variants of one item (e.g.
      * lantern lit/unlit) share a slot but differ in id — highlighting by

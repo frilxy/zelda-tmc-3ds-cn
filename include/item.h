@@ -38,6 +38,10 @@ typedef enum {
     EQUIP_SLOT_A,
     EQUIP_SLOT_B,
     EQUIP_SLOT_NONE,
+#ifdef TMC_3DS
+    EQUIP_SLOT_X,
+    EQUIP_SLOT_Y,
+#endif
 } EquipSlot;
 
 /** Function used to create the item. */

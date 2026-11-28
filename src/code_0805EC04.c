@@ -1,6 +1,9 @@
 #include "common.h"
 #include "entity.h"
 #include "player.h"
+#ifdef TMC_3DS
+#include "port_softslots.h"
+#endif
 #include "room.h"
 #include "vram.h"
 
@@ -173,6 +176,19 @@ void UpdatePlayerInput(void) {
         Port_LogPlayerInput(gPlayerState.controlMode, gInput.heldKeys, keys,
                             state, gPlayerState.direction,
                             gPlayerState.playerInput.playerMacro != NULL);
+    }
+#endif
+#ifdef TMC_3DS
+    /* Inject item use in the player's input only. X/Y never press B in
+     * prompts, menus or scripted controls. */
+    if (gPlayerState.playerInput.playerMacro == NULL && gPlayerState.controlMode == CONTROL_ENABLED &&
+        Port_SoftSlots_IsBHeld()) {
+        gPlayerState.playerInput.heldInput |= INPUT_USE_ITEM2;
+        if (Port_SoftSlots_XyPressed()) gPlayerState.playerInput.newInput |= INPUT_USE_ITEM2;
+    } else if ((gInput.newKeys & B_BUTTON) && (state & INPUT_USE_ITEM2) &&
+               gPlayerState.playerInput.playerMacro == NULL) {
+        /* Physical B still gets its own edge after an X/Y hold. */
+        gPlayerState.playerInput.newInput |= INPUT_USE_ITEM2;
     }
 #endif
 }

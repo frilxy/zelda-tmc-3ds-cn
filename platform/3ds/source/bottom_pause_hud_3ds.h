@@ -7,10 +7,9 @@
 
 /* Touch rectangles for the equipped-item header. End coordinates are exclusive. */
 enum {
-    BOTTOM_PAUSE_HUD_A_X0 = 235,
-    BOTTOM_PAUSE_HUD_A_X1 = 270,
-    BOTTOM_PAUSE_HUD_B_X0 = 274,
-    BOTTOM_PAUSE_HUD_B_X1 = 309,
+    BOTTOM_PAUSE_HUD_EQUIPMENT_X0 = 164,
+    BOTTOM_PAUSE_HUD_EQUIPMENT_PITCH = 38,
+    BOTTOM_PAUSE_HUD_EQUIPMENT_WIDTH = 36,
     BOTTOM_PAUSE_HUD_EQUIPMENT_Y0 = 8,
     BOTTOM_PAUSE_HUD_EQUIPMENT_Y1 = 32,
 };

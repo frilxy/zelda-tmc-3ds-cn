@@ -1,3 +1,4 @@
+#include "port_softslots.h"
 #include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
 #include "updater.h"
@@ -184,6 +185,8 @@ int Platform3DS_Init(void) {
     hidScanInput();
     sHeld = hidKeysHeld();
     sDown = hidKeysDown();
+    Port_SoftSlots_SetXyInput(((sHeld & KEY_X) != 0) | (((sHeld & KEY_Y) != 0) << 1),
+                              ((sDown & KEY_X) != 0) | (((sDown & KEY_Y) != 0) << 1));
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) hidCstickRead(&sCStickPosition);
     return 1;

@@ -3447,11 +3447,11 @@ static void PaintLiveInventory(const SSurf* s, TargetList* tl, const SecondScree
         AddTarget(tl, x, y, x + w, y + h, SS_ACT_QUESTVIEW, SS_QUEST_KINSTONES);
     if (snap->swordSkills && Port_SecondScreen_3DS_CombinedCollectionRect(2, &x, &y, &w, &h))
         AddTarget(tl, x, y, x + w, y + h, SS_ACT_QUESTVIEW, SS_QUEST_TECHNIQUES);
-    if (selected >= 0) {
-        AddTarget(tl, BOTTOM_PAUSE_HUD_A_X0, BOTTOM_PAUSE_HUD_EQUIPMENT_Y0, BOTTOM_PAUSE_HUD_A_X1,
-                  BOTTOM_PAUSE_HUD_EQUIPMENT_Y1, SS_ACT_LIVE_EQUIP, 0);
-        AddTarget(tl, BOTTOM_PAUSE_HUD_B_X0, BOTTOM_PAUSE_HUD_EQUIPMENT_Y0, BOTTOM_PAUSE_HUD_B_X1,
-                  BOTTOM_PAUSE_HUD_EQUIPMENT_Y1, SS_ACT_LIVE_EQUIP, 1);
+    for (int i = 0; i < 4; ++i) {
+        if (selected < 0 && i < 2) continue;
+        const int x = BOTTOM_PAUSE_HUD_EQUIPMENT_X0 + i * BOTTOM_PAUSE_HUD_EQUIPMENT_PITCH;
+        AddTarget(tl, x, BOTTOM_PAUSE_HUD_EQUIPMENT_Y0, x + BOTTOM_PAUSE_HUD_EQUIPMENT_WIDTH,
+                  BOTTOM_PAUSE_HUD_EQUIPMENT_Y1, SS_ACT_LIVE_EQUIP, i);
     }
 }
 #endif
@@ -3579,9 +3579,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         const int saveResult = sUi.saveResult;
         UI_UNLOCK();
         Port_SecondScreenTheme_DrawPlate(s.px, s.w, s.h, s.stride, 12, 38, 296, 168, 1);
-        Port_SecondScreen_3DS_DrawPauseTitle(s.px, s.stride, inventory ? "物品与收集" : "状态与地图");
+        Port_SecondScreen_3DS_DrawPauseTitle(s.px, s.stride, inventory ? "物品与收集" : "地图");
         BottomPauseHud3DS_DrawEquipment(s.px, s.stride, snap);
-        AddTarget(&tl, 12, 8, 124, 31, SS_ACT_TAB, inventory ? SS_TAB_MAP : SS_TAB_ITEMS);
+        AddTarget(&tl, 0, 8, 112, 31, SS_ACT_TAB, inventory ? SS_TAB_MAP : SS_TAB_ITEMS);
         if (inventory) {
             PaintLiveInventory(&s, &tl, snap, selected);
         } else {
@@ -3595,7 +3595,7 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
                 PaintOverworld(&s, snap, &tl, x0, y0, x1, y1, u, tick, wholeMap, followCfg, crestCfg, tick);
         }
         const char* text = confirm ? "确认保存？" : saveResult == 1 ? "已保存" : saveResult == 2 ? "暂无法保存" :
-                           inventory ? (selected >= 0 ? "点上方 A 或 B 装备" : "点选物品") : "状态与地图";
+                           inventory ? (selected >= 0 ? "点上方 A/B/X/Y 绑定" : "点选物品") : "地图";
         if (confirm) tl.n = 0;
         PaintLiveFooter(&s, &tl, text, confirm);
     }
@@ -3755,8 +3755,13 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_LOCK();
             const unsigned slot = (unsigned)sUi.liveItem - 1u;
             UI_UNLOCK();
-            if (slot < SECOND_SCREEN_ITEM_SLOTS && snap.menuItems[slot])
-                Port_SecondScreenState_RequestEquip(snap.menuItems[slot], hit.arg);
+            const uint8_t item = slot < SECOND_SCREEN_ITEM_SLOTS ? snap.menuItems[slot] : 0;
+            if (hit.arg >= 2) {
+                const uint8_t bound = hit.arg == 2 ? snap.equippedX : snap.equippedY;
+                Port_SecondScreenState_RequestEquip(item == bound ? 0 : item, hit.arg);
+            } else if (item) {
+                Port_SecondScreenState_RequestEquip(item, hit.arg);
+            }
             break;
         }
         case SS_ACT_LIVE_SAVE:

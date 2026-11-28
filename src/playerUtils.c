@@ -268,6 +268,10 @@ void UpdateActiveItems(PlayerEntity* this) {
 void CreateItemEquippedAtSlot(u32 equipSlot) {
     if (equipSlot == EQUIP_SLOT_A) {
         CreateItemIfInputMatches(gSave.stats.equipped[SLOT_A], INPUT_USE_ITEM1, TRUE);
+#ifdef TMC_3DS
+    } else if (equipSlot == EQUIP_SLOT_X || equipSlot == EQUIP_SLOT_Y) {
+        CreateItemIfInputMatches(Port_SoftSlots_GetAssignment(equipSlot - EQUIP_SLOT_X), INPUT_USE_ITEM2, TRUE);
+#endif
     } else {
         CreateItemIfInputMatches(gSave.stats.equipped[SLOT_B], INPUT_USE_ITEM2, TRUE);
     }

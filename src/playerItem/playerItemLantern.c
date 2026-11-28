@@ -64,7 +64,7 @@ void PlayerItemLantern_Action1(Entity* this) {
         this->frame = gPlayerEntity.base.frame;
         this->frameSpriteSettings = gPlayerEntity.base.frameSpriteSettings;
     }
-    if (IsItemEquipped(ITEM_LANTERN_ON) < EQUIP_SLOT_NONE) {
+    if (IsItemEquipped(ITEM_LANTERN_ON) != EQUIP_SLOT_NONE) {
         if (((this->frameIndex != 0xff) && (gPlayerEntity.base.spriteSettings.draw != 0)) && (this->timer-- == 0)) {
             this->timer = 4;
             object = CreateObject(LAMP_PARTICLE, 0, 0x10);

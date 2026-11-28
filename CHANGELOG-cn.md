@@ -1,5 +1,13 @@
 # 更新日志（中文版）
 
+## v2.2.11
+
+- 下屏默认显示地图。START 只切换物品与收集页，游戏继续运行，ZL／ZR 停止翻页。
+- 区域地图沿用石板底色，超出视口时可用触笔直接拖动。
+- 状态栏改称「生命」，支持完整显示 20 颗心。地图页签改回「地图」，页签左端贴合屏幕边缘。
+- 幸福碎片及剑技的标题移到石板内部，去掉独立页签。
+- 移植 X／Y 道具键。选中物品后点右上角 X 或 Y 绑定，按实体键使用。
+
 ## v2.2.10
 
 - 暂停菜单在下屏合并为「物品与收集」和「状态与地图」两页，保留游戏原版素材和说明栏。
@@ -107,7 +115,7 @@
 
 ## Changelog
 
-- Two native-style lower-screen pages.
-- Widen item spacing and align the tray.
-- Add map status and footer icons.
-- Touch to equip, navigate, and save.
+- Switch screens without pausing.
+- Pan large region maps with touch.
+- Show all 20 hearts and fix titles.
+- Assign and use items with X and Y.

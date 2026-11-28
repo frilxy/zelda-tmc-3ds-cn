@@ -1,4 +1,7 @@
 #include "port_second_screen_state.h"
+#ifdef TMC_3DS
+#include "port_softslots.h"
+#endif
 
 #include <string.h>
 
@@ -43,10 +46,10 @@ static SecondScreenSnapshot sSnapshot;
 static SNAPSHOT_MUTEX_TYPE sSnapshotMutex = SNAPSHOT_MUTEX_INITIALIZER;
 
 /* Pending tap-to-equip request from the UI thread, consumed by Publish().
- * itemId 0 = nothing pending. Guarded by sSnapshotMutex — same one-memcpy
+ * slot UINT8_MAX = nothing pending. Guarded by sSnapshotMutex — same one-memcpy
  * discipline, never held across engine calls. */
 static uint8_t sPendingEquipItem = 0;
-static uint8_t sPendingEquipSlot = 0;
+static uint8_t sPendingEquipSlot = UINT8_MAX;
 
 /* Port-side automap: which rooms of each area have been entered this
  * session. TMC's own per-room "visited" state is scattered across
@@ -71,7 +74,7 @@ void Port_SecondScreenState_Publish(void) {
     SNAPSHOT_MUTEX_LOCK(&sSnapshotMutex);
     equipItem = sPendingEquipItem;
     equipSlot = sPendingEquipSlot;
-    sPendingEquipItem = 0;
+    sPendingEquipSlot = UINT8_MAX;
     /* A subtask clears/reuses gRoomControls and gArea for its auxiliary
      * scene. Preserve the last gameplay map, not that temporary room. Item
      * quantities and equipment below still come from the current save. */
@@ -98,9 +101,13 @@ void Port_SecondScreenState_Publish(void) {
          * HUD refresh) and only for items actually in the inventory — a
          * stale tap from a previous save can't equip something Link
          * doesn't own. */
-        if (equipItem != 0 && GetInventoryValue(equipItem) == 1) {
+#ifdef TMC_3DS
+        if (equipSlot < 4 && (equipItem == 0 ? equipSlot >= 2 : GetInventoryValue(equipItem) == 1))
+            Port_EquipButton(equipSlot, equipItem);
+#else
+        if (equipSlot < 2 && equipItem != 0 && GetInventoryValue(equipItem) == 1)
             ForceEquipItem(equipItem, equipSlot ? EQUIP_SLOT_B : EQUIP_SLOT_A);
-        }
+#endif
 
         if (!keepMapContext) {
             next.area = gRoomControls.area;
@@ -110,6 +117,10 @@ void Port_SecondScreenState_Publish(void) {
         }
         next.equippedA = gSave.stats.equipped[SLOT_A];
         next.equippedB = gSave.stats.equipped[SLOT_B];
+#ifdef TMC_3DS
+        next.equippedX = Port_SoftSlots_GetAssignment(0);
+        next.equippedY = Port_SoftSlots_GetAssignment(1);
+#endif
         next.equippedSlotA = next.equippedA ? gItemMetaData[next.equippedA].menuSlot : 0xFF;
         next.equippedSlotB = next.equippedB ? gItemMetaData[next.equippedB].menuSlot : 0xFF;
         next.health = gSave.stats.health;

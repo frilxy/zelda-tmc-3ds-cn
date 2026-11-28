@@ -1,6 +1,8 @@
 #ifdef TMC_3DS
 #include "gba/io_reg.h"
 #include "main.h"
+#include "game.h"
+#include "port_softslots.h"
 #include "port_audio.h"
 #include "port_asset_loader.h"
 #include "port_gba_mem.h"
@@ -765,7 +767,11 @@ void VBlankIntrWait(void) {
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
         }
     }
-    gba_write16(REG_ADDR_KEYINPUT, Platform3DS_ReadKeyInput());
+    const u16 keyinput = Platform3DS_ReadKeyInput();
+    Port_SoftSlots_UpdateXy(gMain.task == TASK_GAME && gMain.state == GAMETASK_MAIN &&
+                                (gMain.substate == GAMEMAIN_UPDATE || gMain.substate == GAMEMAIN_BARRELUPDATE),
+                            (keyinput & B_BUTTON) == 0);
+    gba_write16(REG_ADDR_KEYINPUT, keyinput);
     {
         extern void Port_QuickSave_AutoTick(void);
         Port_QuickSave_AutoTick();

@@ -217,8 +217,8 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
 void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title) {
     if (!title || !*title) return;
     SSurf surface = { pixels, 320, 240, stride };
-    DrawLabelPlate(&surface, 12, 8, 124, 31, SS_PLATE_TITLE);
-    MenuTextCenteredFace(&surface, title, 68, 19, 1, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
+    DrawLabelPlate(&surface, -3, 8, 112, 31, SS_PLATE_TITLE);
+    MenuTextCenteredFace(&surface, title, 55, 19, 1, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
 }
 
 void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, int y, int width, int height,
