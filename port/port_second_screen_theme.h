@@ -250,6 +250,10 @@ void Port_SecondScreenTheme_DrawChip(uint32_t* pixels, int32_t bufW, int32_t buf
 int32_t Port_SecondScreenTheme_DrawText(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t x,
                                         int32_t y, int32_t scale, int style, const char* str);
 
+#ifdef TMC_3DS
+const uint32_t* Port_SecondScreenTheme_ItemNamePalette(void);
+#endif
+
 /* Pixel width DrawText would advance (0 when the font is not ready). */
 int32_t Port_SecondScreenTheme_TextWidth(const char* str, int32_t scale);
 

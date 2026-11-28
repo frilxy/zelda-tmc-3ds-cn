@@ -882,6 +882,14 @@ static int BuildChipSet(u32 borderType, u32 fillType, const uint16_t* pal, u32 n
 /* Composes the pause item screen's two static layers and derives every
  * light-theme ingredient from them (slab bbox, doodle template, tones).
  * Each ingredient validates independently and degrades on its own. */
+#ifdef TMC_3DS
+static uint32_t sItemNamePalette[16];
+
+const uint32_t* Port_SecondScreenTheme_ItemNamePalette(void) {
+    return sItemNamePalette;
+}
+#endif
+
 static void BuildMenuTheme(void) {
     uint16_t bgPal[16 * 16];
     /* LoadGfxGroups (11, 12) -> sub_080A4D34 (181) -> sub_080A4DB8 (182):
@@ -906,6 +914,9 @@ static void BuildMenuTheme(void) {
     for (i = 0; i < sizeof(kMenuPaletteGroups); i++) {
         MenuApplyPaletteGroup(kMenuPaletteGroups[i], bgPal);
     }
+#ifdef TMC_3DS
+    for (i = 0; i < 16; ++i) sItemNamePalette[i] = Rgb555ToRgba8888(bgPal[0xf0 + i]);
+#endif
 
     /* Parchment layer: backdrop color 0 under the pattern (the pattern
      * tiles are fully opaque in practice; color 0 never shows). */

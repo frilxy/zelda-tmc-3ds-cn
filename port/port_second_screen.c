@@ -68,6 +68,7 @@
 #include "port_dump_state_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "bottom_pause_hud_3ds.h"
+#include "message.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -3500,14 +3501,19 @@ static void ClearUnavailableWorldMap(void) {
 #endif
 
 #ifdef TMC_3DS
-static void PaintLiveFooter(const SSurf* s, TargetList* tl, const char* text, bool confirm) {
+static void PaintLiveFooter(const SSurf* s, TargetList* tl, const char* text, unsigned item, bool confirm) {
     Port_SecondScreen_3DS_DrawPauseButton(s->px, s->stride, 16, 210, 54, 24, SS_PAUSE_ICON_SAVE);
     Port_SecondScreen_3DS_DrawPauseButton(s->px, s->stride, 250, 210, 54, 24,
                                          confirm ? SS_PAUSE_ICON_BACK : SS_PAUSE_ICON_SETTINGS);
     AddTarget(tl, 16, 210, 70, 234, confirm ? SS_ACT_LIVE_CONFIRM : SS_ACT_LIVE_SAVE, 0);
     AddTarget(tl, 250, 210, 304, 234, confirm ? SS_ACT_LIVE_CANCEL : SS_ACT_LIVE_SETTINGS, 0);
     DrawLabelPlate(s, 76, 211, 244, 232, SS_PLATE_DARK);
-    MenuTextCentered(s, text, 160, 221, 1, SS_TEXT_WHITE);
+    if (item) {
+        Port_Text_DrawItemName(s->px + 213 * s->stride + 80, 160, 17, s->stride, 0, item,
+                               Port_SecondScreenTheme_ItemNamePalette());
+    } else {
+        MenuTextCentered(s, text, 160, 221, 1, SS_TEXT_WHITE);
+    }
 }
 
 static void PaintLiveInventory(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, int selected) {
@@ -3686,9 +3692,15 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
             if (mapName == NULL) mapName = CurrentMapName(snap, isDungeon);
         }
         const char* text = confirm ? "确认保存？" : saveResult == 1 ? "已保存" : saveResult == 2 ? "暂无法保存" :
-                           inventory ? (selected >= 0 ? "按 A/B/X/Y 绑定" : "点选物品") : (mapName ? mapName : "地图");
+                           inventory ? "点选物品" : (mapName ? mapName : "地图");
+        unsigned item = 0;
+        if (inventory && !confirm && saveResult == 0 && (unsigned)selected < SECOND_SCREEN_ITEM_SLOTS) {
+            item = snap->menuItems[selected];
+            if (item && selected >= 12 && snap->bottleContents[selected - 12])
+                item = snap->bottleContents[selected - 12];
+        }
         if (confirm) tl.n = 0;
-        PaintLiveFooter(&s, &tl, text, confirm);
+        PaintLiveFooter(&s, &tl, text, item, confirm);
     }
     SS_MARK(SS_PHASE_PANEL);
     ++sSsPhasePaints;

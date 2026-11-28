@@ -1022,17 +1022,10 @@ u32 sub_0805F9A0(u32 r0) {
 }
 
 #ifdef TMC_3DS
-void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
-                             const uint32_t* palette) {
-    extern const u8 gUnk_08129004[];
-    const u8* const font = gUnk_08129004;
-    /* The original ShowTextBox destination is in BG1. Reconstruct its origin,
-     * including the three-pixel vertical scroll, in the caller's buffer. */
-    const u32 cell = (Port_ReadU32(font) - 0x02021f30u) / 2;
-    x += (cell % 32) * 8;
-    y += (cell / 32) * 8 - 3;
-    const int textWidth = font[18];
-    if (textWidth == 0 || textWidth > 240 || font[20] > 7 || font[21] >= 14) return;
+static void DrawPrivateMenuText(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
+                                const u8* font, const uint32_t* palette, bool centerFirstLine) {
+    const int textWidth = centerFirstLine && width < font[18] ? width : font[18];
+    if (textWidth <= 0 || textWidth > 240 || font[20] > 7 || font[21] >= 14) return;
     const u32 fill = sub_0805F8F8(font[20]);
     u32 tiles[240 * 8 / sizeof(u32)];
     /* These ROM messages don't use gameplay substitutions. Keep the token's
@@ -1074,16 +1067,35 @@ void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride
         }
         const u8* bytes = (const u8*)tiles;
         const int columns = (line.unk6 + 7) & ~7;
+        const int left = centerFirstLine ? x - line.unk6 / 2 : x;
         for (int dy = 0; dy < 16 && y + dy < height; ++dy) {
             if (y + dy < 0) continue;
-            for (int dx = 0; dx < columns && x + dx < width; ++dx) {
-                if (x + dx < 0) continue;
+            for (int dx = 0; dx < columns && left + dx < width; ++dx) {
+                if (left + dx < 0) continue;
                 const u8 packed = bytes[(dx / 8) * 64 + dy * 4 + (dx % 8) / 2];
                 const unsigned index = (packed >> (4 * (dx & 1))) & 15;
-                if (index) pixels[(y + dy) * stride + x + dx] = palette[index];
+                if (index) pixels[(y + dy) * stride + left + dx] = palette[index];
             }
         }
+        if (centerFirstLine) break;
         y += 16;
     }
+}
+
+void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
+                             const uint32_t* palette) {
+    extern const u8 gUnk_08129004[];
+    /* The original BG1 text destination includes a three-pixel scroll. */
+    const u32 cell = (Port_ReadU32(gUnk_08129004) - 0x02021f30u) / 2;
+    DrawPrivateMenuText(pixels, width, height, stride, x + (cell % 32) * 8, y + (cell / 32) * 8 - 3,
+                        textIndex, gUnk_08129004, palette, false);
+}
+
+void Port_Text_DrawItemName(uint32_t* pixels, int width, int height, int stride, int y, unsigned item,
+                            const uint32_t* palette) {
+    extern const u8 gUnk_08128FA8[];
+    if (item == 0 || item > 255) return;
+    DrawPrivateMenuText(pixels, width, height, stride, width / 2, y, TEXT_INDEX(TEXT_ITEMS, item),
+                        gUnk_08128FA8, palette, true);
 }
 #endif

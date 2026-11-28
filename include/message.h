@@ -91,6 +91,9 @@ void MessageInitialize(void);
  * The palette is BG bank F from the native sword-technique screen. */
 void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
                              const uint32_t* palette);
+/* Center the first ROM item-name line on the supplied footer interior. */
+void Port_Text_DrawItemName(uint32_t* pixels, int width, int height, int stride, int y, unsigned item,
+                            const uint32_t* palette);
 #endif
 
 
