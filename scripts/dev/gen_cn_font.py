@@ -31,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 SOURCES = [
     "port/port_second_screen.c",
     "port/port_second_screen_theme.c",
+    "src/menu/pauseMenu.c",
     "platform/3ds/source/port_config_3ds.c",
     "platform/3ds/source/main_3ds.c",
     "port/port_config.h",
