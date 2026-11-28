@@ -1175,7 +1175,7 @@ static bool DrawDetailBackdrop(uint32_t* pixels, int32_t stride, int32_t dstX, i
 #endif
 
 static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t dstX, int32_t dstY,
-                    int32_t dstW, int32_t dstH, const char* title, bool techniques, int32_t count, ListCellFn fill,
+                    int32_t dstW, int32_t dstH, bool techniques, int32_t count, ListCellFn fill,
                     const void* ctx) {
 #ifdef TMC_3DS
     if (dstW != QUEST_W || dstH != QUEST_H || dstX < 0 || dstY < 0 ||
@@ -1185,11 +1185,6 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
         Port_SecondScreenTheme_DrawPlate(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, 1);
         Port_SecondScreenTheme_DrawWell(pixels, bufW, bufH, stride, dstX + 35, dstY + 6, 136, 21, 1);
     }
-    const int32_t titleW = Port_SecondScreenTheme_TitleTextWidth(title, 1);
-    const int32_t titleY = Port_SecondScreenTheme_InkTopForCenter(dstY + 16, 1, SS_FACE_LARGE);
-    Port_SecondScreenTheme_DrawTitleText(pixels, bufW, bufH, stride, dstX + 103 - titleW / 2, titleY, 1,
-                                         SS_TEXT_NAVY, title);
-
     /* The bag has 11 native cells, four across on the first two rows. The
      * techniques page lines up its eight scrolls in one row at y=47. */
     const int limit = techniques ? PORT_QUEST_TECHNIQUE_COUNT : 11;
@@ -1207,7 +1202,6 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
     int32_t scale, pad, innerX, innerY, innerW, innerH;
     int32_t cols, rows, cell, gap, gridW, gridH, ox, oy, i;
 
-    (void)title;
     (void)techniques;
     if (count <= 0) return 0;
     scale = (dstW < dstH ? dstW : dstH) / 200;
@@ -1359,7 +1353,7 @@ int Port_SecondScreenQuest_DrawKinstones(uint32_t* pixels, int32_t bufW, int32_t
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "幸福碎片", false, KinstoneRowCount(snap),
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, false, KinstoneRowCount(snap),
                     KinstoneListCell, snap);
 }
 
@@ -1420,6 +1414,6 @@ int Port_SecondScreenQuest_DrawTechniques(uint32_t* pixels, int32_t bufW, int32_
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "剑技", true, TECHNIQUE_COUNT, TechniqueListCell,
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, true, TECHNIQUE_COUNT, TechniqueListCell,
                     snap);
 }
