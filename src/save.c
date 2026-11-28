@@ -3,6 +3,9 @@
 #include "sound.h"
 #include "menu.h"
 #include "main.h"
+#ifdef TMC_3DS
+#include "game.h"
+#endif
 #include "fileselect.h"
 #ifdef PC_PORT
 #include <stdio.h>
@@ -200,6 +203,14 @@ u32 WriteSaveFile(u32 index, SaveFile* saveFile) {
 #endif
     return DataDoubleWriteWithStatus(index, saveFile);
 }
+
+#ifdef TMC_3DS
+bool Port_SaveLiveGame3DS(void) {
+    if (gMain.task != TASK_GAME || gMain.state != GAMETASK_MAIN || gSaveHeader->saveFileId >= 3 ||
+        (gMain.substate != GAMEMAIN_UPDATE && gMain.substate != GAMEMAIN_BARRELUPDATE)) return false;
+    return WriteSaveFile(gSaveHeader->saveFileId, &gSave) == 1;
+}
+#endif
 
 u32 WriteSaveHeader(SaveHeader* saveHeader) {
     return DataDoubleWriteWithStatus(3, saveHeader);

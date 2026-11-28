@@ -6,7 +6,6 @@
 #include "port_audio_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
-#include "port_pause_3ds.h"
 
 #include <3ds.h>
 
@@ -239,7 +238,6 @@ void Platform3DS_EnterGameplayDisplay(void) {
 }
 
 static uint16_t MapKeysToGba(uint32_t keys) {
-    if (Port_Pause3DS_Active() && Port_SecondScreen_3DS_PauseSettingsOpen()) return 0x03ff;
     enum {
         GBA_A = 1u << 0,
         GBA_B = 1u << 1,
@@ -257,7 +255,7 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     if ((keys & KEY_A) && !quickDumpCombo) input &= ~GBA_A;
     if (keys & KEY_B) input &= ~GBA_B;
     if (keys & KEY_SELECT) input &= ~GBA_SELECT;
-    if (keys & KEY_START) input &= ~GBA_START;
+    if ((keys & KEY_START) && !Port_SecondScreen_3DS_InGame()) input &= ~GBA_START;
     if (keys & (KEY_DRIGHT | KEY_CPAD_RIGHT)) input &= ~GBA_RIGHT;
     if (keys & (KEY_DLEFT | KEY_CPAD_LEFT)) input &= ~GBA_LEFT;
     if (keys & (KEY_DUP | KEY_CPAD_UP)) input &= ~GBA_UP;
@@ -593,17 +591,28 @@ static void PollInput(void) {
         memset(&sCStickPosition, 0, sizeof(sCStickPosition));
         sCStickHeld = false;
     }
-    if (Port_Pause3DS_Active() && !Port_SecondScreen_3DS_PauseSettingsOpen()) {
-        const uint32_t shoulders = sDown & (KEY_ZL | KEY_ZR);
-        if (shoulders == KEY_ZL) Port_Pause3DS_QueuePage(-1);
-        if (shoulders == KEY_ZR) Port_Pause3DS_QueuePage(1);
-    }
-    if (sDown & KEY_TOUCH) {
+    if (sDown & KEY_START) Port_SecondScreen_3DS_ToggleInventory();
+    static int touchX, touchY, lastX, lastY;
+    static bool dragReady, dragged, touching;
+    if (sHeld & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
-        extern bool Port_PPU_3DS_HandlePauseTouch(int x, int y);
-        if (!Port_PPU_3DS_HandlePauseTouch(touch.px, touch.py))
-            Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
+        if (!touching) {
+            touching = true;
+            touchX = lastX = touch.px;
+            touchY = lastY = touch.py;
+            dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
+            dragged = false;
+        }
+        if (dragReady && (dragged || abs((int)touch.px - touchX) + abs((int)touch.py - touchY) >= 4)) {
+            dragged = true;
+            Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX, (int)touch.py - lastY);
+            lastX = touch.px;
+            lastY = touch.py;
+        }
+    } else if (touching) {
+        touching = false;
+        if (!dragged) Port_SecondScreen_3DS_OnTap(touchX, touchY, 0);
     }
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;

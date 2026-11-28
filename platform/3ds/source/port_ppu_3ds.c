@@ -10,10 +10,6 @@
 #include "port_save.h"
 #include "port_second_screen.h"
 #include "port_second_screen_3ds.h"
-#include "port_second_screen_theme.h"
-#include "port_second_screen_render.h"
-#include "bottom_pause_hud_3ds.h"
-#include "port_pause_3ds.h"
 #include "port_second_screen_state.h"
 #include "port_widescreen.h"
 #include "platform_3ds.h"
@@ -39,7 +35,6 @@
 #include "screen.h"
 #include "fade.h"
 #include "menu.h"
-#include "item.h"
 #include "player.h"
 #include "room.h"
 #include "save.h"
@@ -67,9 +62,6 @@ static uint32_t sBottomTick;
 static bool sBottomReady;
 static bool sBottomTextureReady;
 static bool sBottomTextureDirty;
-static bool sNativePauseShown;
-static bool sNativePauseNavigation;
-static PortPause3DSMainPage sNativePausePage;
 static bool sBottomWorkerPending;
 static int sBottomFrontBuffer;
 static int sBottomWorkerBuffer;
@@ -1149,247 +1141,6 @@ static void ApplyUploadLayoutSwitch(void) {
 }
 
 
-enum {
-    PAUSE_BOTTOM_WIDTH = 320,
-    PAUSE_BOTTOM_HEIGHT = 240,
-    PAUSE_NATIVE_X = (PAUSE_BOTTOM_WIDTH - GBA_NATIVE_W) / 2,
-    PAUSE_NATIVE_Y = (PAUSE_BOTTOM_HEIGHT - GBA_H) / 2,
-    PAUSE_ITEMS_X = 24,
-    PAUSE_ITEMS_Y = 68,
-    PAUSE_ITEM_WIDTH = 32,
-    PAUSE_ITEM_HEIGHT = 23,
-    PAUSE_ITEM_COLUMN = 39,
-    PAUSE_ITEM_ROW = 26,
-    PAUSE_BOTTLES_Y = 173,
-    PAUSE_BOTTLE_WIDTH = 28,
-    PAUSE_MAP_X = 24,
-    PAUSE_MAP_Y = 52,
-    PAUSE_MAP_SOURCE_X = 20,
-    PAUSE_MAP_SOURCE_Y = 4,
-    PAUSE_MAP_WIDTH = 200,
-    PAUSE_MAP_HEIGHT = 136,
-    PAUSE_BUTTON_Y = 210,
-    PAUSE_BUTTON_WIDTH = 54,
-    PAUSE_BUTTON_HEIGHT = 24,
-    PAUSE_SAVE_X = 16,
-    PAUSE_SETTINGS_X = 250,
-    PAUSE_DESCRIPTION_X = 76,
-    PAUSE_TITLE_X = 12,
-    PAUSE_TITLE_WIDTH = 112,
-};
-
-static bool PauseHit(int x, int y, int left, int top, int width, int height) {
-    return x >= left && x < left + width && y >= top && y < top + height;
-}
-
-static void PauseItemRect(unsigned slot, int* x, int* y, int* w, int* h) {
-    *x = PAUSE_ITEMS_X + (slot < 12 ? (int)(slot % 3) * PAUSE_ITEM_COLUMN : (int)(slot - 12) * PAUSE_BOTTLE_WIDTH);
-    *y = slot < 12 ? PAUSE_ITEMS_Y + (int)(slot / 3) * PAUSE_ITEM_ROW : PAUSE_BOTTLES_Y;
-    *w = slot < 12 ? PAUSE_ITEM_WIDTH : PAUSE_BOTTLE_WIDTH;
-    *h = PAUSE_ITEM_HEIGHT;
-}
-
-bool Port_PPU_3DS_HandlePauseTouch(int x, int y) {
-    if (!Port_Pause3DS_Active() || Port_SecondScreen_3DS_PauseSettingsOpen()) return sNativePauseShown;
-    if (!sNativePauseShown || !Port_Pause3DS_MenuVisible()) return true;
-    if (sNativePausePage == PORT_PAUSE3DS_MAIN_NONE) {
-        if (PauseHit(x, y, PAUSE_SAVE_X, PAUSE_BUTTON_Y, PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT))
-            Port_Pause3DS_QueueBack();
-        else if (PauseHit(x, y, PAUSE_NATIVE_X, PAUSE_NATIVE_Y, GBA_NATIVE_W, GBA_H))
-            Port_Pause3DS_QueueNativePoint(x - PAUSE_NATIVE_X, y - PAUSE_NATIVE_Y);
-        return true;
-    }
-    if (sNativePauseNavigation && PauseHit(x, y, PAUSE_TITLE_X, 5, PAUSE_TITLE_WIDTH, 30)) {
-        Port_Pause3DS_QueuePage(1);
-    } else if (PauseHit(x, y, PAUSE_SAVE_X, PAUSE_BUTTON_Y, PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT)) {
-        Port_Pause3DS_QueueSave();
-    } else if (PauseHit(x, y, PAUSE_SETTINGS_X, PAUSE_BUTTON_Y, PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT)) {
-        Port_SecondScreen_3DS_OpenPauseSettings(false);
-    } else if (sNativePausePage == PORT_PAUSE3DS_MAIN_MAP) {
-        if (PauseHit(x, y, PAUSE_MAP_X, PAUSE_MAP_Y, PAUSE_MAP_WIDTH, PAUSE_MAP_HEIGHT))
-            Port_Pause3DS_QueueMapPoint(x - PAUSE_MAP_X + PAUSE_MAP_SOURCE_X, y - PAUSE_MAP_Y + PAUSE_MAP_SOURCE_Y);
-    } else {
-        if (PauseHit(x, y, BOTTOM_PAUSE_HUD_A_X0, BOTTOM_PAUSE_HUD_EQUIPMENT_Y0,
-                     BOTTOM_PAUSE_HUD_A_X1 - BOTTOM_PAUSE_HUD_A_X0,
-                     BOTTOM_PAUSE_HUD_EQUIPMENT_Y1 - BOTTOM_PAUSE_HUD_EQUIPMENT_Y0)) {
-            Port_Pause3DS_QueueEquip(0);
-            return true;
-        }
-        if (PauseHit(x, y, BOTTOM_PAUSE_HUD_B_X0, BOTTOM_PAUSE_HUD_EQUIPMENT_Y0,
-                     BOTTOM_PAUSE_HUD_B_X1 - BOTTOM_PAUSE_HUD_B_X0,
-                     BOTTOM_PAUSE_HUD_EQUIPMENT_Y1 - BOTTOM_PAUSE_HUD_EQUIPMENT_Y0)) {
-            Port_Pause3DS_QueueEquip(1);
-            return true;
-        }
-        for (unsigned slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; ++slot) {
-            int left, top, width, height;
-            PauseItemRect(slot, &left, &top, &width, &height);
-            if (PauseHit(x, y, left, top, width, height)) {
-                Port_Pause3DS_QueueItem(slot);
-                return true;
-            }
-        }
-        const int collection = Port_SecondScreen_3DS_CombinedCollectionTap(x, y);
-        if (collection >= 0) Port_Pause3DS_QueueCollection((unsigned)collection);
-    }
-    return true;
-}
-
-static void DrawPauseButton(uint32_t* pixels, int x, SecondScreenPauseIcon3DS icon) {
-    Port_SecondScreen_3DS_DrawPauseButton(pixels, sBottomUploadPitch, x, PAUSE_BUTTON_Y,
-                                         PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT, icon);
-}
-
-static void DrawPauseText(uint32_t* pixels, const char* text, int center, int middle, int style) {
-    const int width = Port_SecondScreenTheme_BigTextWidth(text, 1);
-    const int y = Port_SecondScreenTheme_InkTopForCenter(middle, 1, SS_FACE_BODY);
-    Port_SecondScreenTheme_DrawBigText(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                      center - width / 2, y, 1, style, text);
-}
-
-static void DrawCombinedItems(uint32_t* pixels, const SecondScreenSnapshot* snap, int collection) {
-    const unsigned selected = Port_Pause3DS_SelectedItemSlot();
-    Port_SecondScreenTheme_DrawWell(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                   PAUSE_ITEMS_X, PAUSE_BOTTLES_Y, 4 * PAUSE_BOTTLE_WIDTH, PAUSE_ITEM_HEIGHT, 1);
-    for (unsigned slot = 0; slot < SECOND_SCREEN_ITEM_SLOTS; ++slot) {
-        int x, y, w, h;
-        PauseItemRect(slot, &x, &y, &w, &h);
-        uint8_t item = snap->menuItems[slot];
-        if (slot < 12)
-            Port_SecondScreenTheme_DrawWell(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                           x, y, w, h, 1);
-        if (slot == snap->equippedSlotA || slot == snap->equippedSlotB) {
-            const uint32_t tint = Port_SecondScreenTheme_Color(SSC_BORDER_LIGHT);
-            Port_SecondScreenTheme_DrawBrackets(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                               x, y, w, h, 1, tint);
-        }
-        if (slot >= 12 && item && snap->bottleContents[slot - 12]) item = snap->bottleContents[slot - 12];
-        Port_SecondScreenRender_DrawItemIcon(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                             x + (w - 16) / 2, y + 2, 1, item);
-        if (item == ITEM_BOMBS || item == ITEM_REMOTE_BOMBS || item == ITEM_BOW || item == ITEM_LIGHT_ARROW) {
-            const bool arrows = item == ITEM_BOW || item == ITEM_LIGHT_ARROW;
-            Port_SecondScreenTheme_DrawHudNumber(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                                 x + w, y + h - 16, 1,
-                                                 arrows ? snap->arrowCount : snap->bombCount, 2, 0);
-        }
-        if (collection < 0 && selected == slot)
-            Port_SecondScreenTheme_DrawBrackets(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                               x, y, w, h, 1, Port_SecondScreenTheme_Color(SSC_MENU_RED));
-    }
-}
-
-static void CopyPausePixels(uint32_t* dst, int x, int y, int sx, int sy, int width, int height) {
-    for (int row = 0; row < height; ++row)
-        memcpy(dst + (y + row) * sBottomUploadPitch + x,
-               sTopUpload + (sy + row) * sTopUploadPitch + sx, (size_t)width * sizeof(*dst));
-}
-
-static void DrawPauseDescription(uint32_t* pixels) {
-    const int x = PAUSE_DESCRIPTION_X;
-    const int y = PAUSE_BUTTON_Y + 1;
-    /* Use the same framed black strip as the original pause screen. Only
-     * the edges and middle are copied, so the native text remains 1:1. */
-    CopyPausePixels(pixels, x, y, 12, 139, 8, 21);
-    CopyPausePixels(pixels, x + 8, y, 44, 139, 152, 21);
-    CopyPausePixels(pixels, x + 160, y, 220, 139, 8, 21);
-
-}
-
-static void PaintPauseMargins(uint32_t* pixels) {
-    unsigned firstPalette;
-    const uint16_t display = gIoMem[0] | (gIoMem[1] << 8);
-    const uint16_t bg3 = gIoMem[MODE1_IO_BG3CNT] | (gIoMem[MODE1_IO_BG3CNT + 1] << 8);
-    const uint8_t* indices = (display & MODE1_DISP_BG3_ON) && bg3 == 0x1e0b
-                                 ? ScenePictures_PauseIndices(&firstPalette, NULL) : NULL;
-    const uint32_t background = Port_SecondScreenTheme_Color(SSC_MENU_CREAM);
-    uint32_t palette[64];
-    if (indices) {
-        palette[0] = background;
-        for (unsigned i = 1; i < 64; ++i)
-            palette[i] = virtuappu_mode1_rgb555_to_abgr8888(gBgPltt[firstPalette * 16 + i]);
-    }
-    for (int y = 0; y < PAUSE_BOTTOM_HEIGHT; ++y) {
-        uint32_t* row = pixels + y * sBottomUploadPitch;
-        const uint8_t* ext = indices ? indices + y * SCENE_PAUSE_W + PAUSE_NATIVE_X : NULL;
-        for (int x = 0; x < PAUSE_BOTTOM_WIDTH; ++x)
-            row[x] = ext ? palette[ext[x]] : background;
-    }
-}
-
-static void PresentNativePause(void) {
-    if (!PlatformGpu3DS_BeginBottomOnly()) return;
-    Platform3DS_Heartbeat();
-
-    /* Execute the live GBA PPU at its original geometry. Its result is copied
-     * pixel for pixel, and all new controls are composed at LCD resolution. */
-    const uint16_t display = gIoMem[0] | (gIoMem[1] << 8);
-    virtuappu_registers.mode = (display & 7) == 1 || (display & 7) == 2 ? 2 : 1;
-    virtuappu_registers.frame_width = GBA_NATIVE_W;
-    virtuappu_registers.frame_height = GBA_H;
-    virtuappu_registers.frame_pitch = sTopUploadPitch;
-    virtuappu_mode1_ws_full_view = 0;
-    virtuappu_mode1_ws_hud_right_anchor = 0;
-    virtuappu_mode1_ws_msg_shift = 0;
-    virtuappu_mode1_ws_win0_lines = NULL;
-    virtuappu_mode1_bg1_picture = NULL;
-    virtuappu_mode1_bg3_repeat = false;
-    virtuappu_mode1_bg_repeat_mask = 0;
-    virtuappu_mode1_bg3_hdma_native_bounds = false;
-    virtuappu_mode1_bg2x_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x28, gIoMem + 0x2c) != 0;
-    virtuappu_mode1_bg2y_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x2c, gIoMem + 0x30) != 0;
-    virtuappu_mode1_pre_line_callback = port_hdma_has_active_channels() ? port_hdma_step_line : NULL;
-    port_hdma_vblank_reset();
-    virtuappu_render_frame();
-
-    /* The worker can only write to the opposite buffer. FrameBegin has
-     * retired the GPU transfer that last read this front buffer. */
-    uint32_t* pixels = sBottomUploads[sBottomFrontBuffer];
-    PaintPauseMargins(pixels);
-    const PortPause3DSMainPage page = Port_Pause3DS_MainPage();
-    const bool navigation = Port_Pause3DS_PageNavigationAvailable();
-    if (page == PORT_PAUSE3DS_MAIN_NONE) {
-        CopyPausePixels(pixels, PAUSE_NATIVE_X, PAUSE_NATIVE_Y, 0, 0, GBA_NATIVE_W, GBA_H);
-        DrawPauseButton(pixels, PAUSE_SAVE_X, SS_PAUSE_ICON_BACK);
-        Port_SecondScreen_3DS_DrawPauseTitle(pixels, sBottomUploadPitch, Port_Pause3DS_PageName());
-    } else {
-        SecondScreenSnapshot snap;
-        Port_SecondScreenState_Read(&snap);
-        Port_SecondScreenTheme_DrawPlate(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                        12, 38, 296, 168, 1);
-        Port_SecondScreen_3DS_DrawPauseTitle(pixels, sBottomUploadPitch,
-                                            page == PORT_PAUSE3DS_MAIN_MAP ? "状态与地图" : "物品与收集");
-        BottomPauseHud3DS_DrawEquipment(pixels, sBottomUploadPitch, &snap);
-        DrawPauseButton(pixels, PAUSE_SAVE_X, SS_PAUSE_ICON_SAVE);
-        DrawPauseButton(pixels, PAUSE_SETTINGS_X, SS_PAUSE_ICON_SETTINGS);
-        if (page == PORT_PAUSE3DS_MAIN_MAP) {
-            CopyPausePixels(pixels, PAUSE_MAP_X, PAUSE_MAP_Y,
-                            PAUSE_MAP_SOURCE_X, PAUSE_MAP_SOURCE_Y, PAUSE_MAP_WIDTH, PAUSE_MAP_HEIGHT);
-            BottomPauseHud3DS_DrawStatus(pixels, sBottomUploadPitch, &snap);
-            DrawPauseDescription(pixels);
-        } else {
-            const int collection = Port_Pause3DS_SelectedCollection();
-            DrawPauseText(pixels, "物品", 77, 55, SS_TEXT_INK);
-            DrawPauseText(pixels, "收集", 216, 55, SS_TEXT_INK);
-            DrawCombinedItems(pixels, &snap, collection);
-            Port_SecondScreen_3DS_DrawCombinedCollection(pixels, sBottomUploadPitch, &snap);
-            if (collection >= 0) {
-                int x, y, width, height;
-                if (Port_SecondScreen_3DS_CombinedCollectionRect(collection, &x, &y, &width, &height))
-                    Port_SecondScreenTheme_DrawBrackets(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT,
-                                                       sBottomUploadPitch, x, y, width, height, 1,
-                                                       Port_SecondScreenTheme_Color(SSC_MENU_RED));
-            }
-            DrawPauseDescription(pixels);
-        }
-    }
-    if (PlatformGpu3DS_EndBottom(pixels, true)) {
-        sNativePauseShown = true;
-        sNativePauseNavigation = navigation;
-        sNativePausePage = page;
-        sBottomReady = false;
-    }
-}
-
 static void PresentFrame(void);
 
 void Port_PPU_PresentFrame(void) {
@@ -1400,13 +1151,6 @@ void Port_PPU_PresentFrame(void) {
 
 static void PresentFrame(void) {
     ApplyUploadLayoutSwitch();
-    const bool pauseActive = Port_Pause3DS_Active();
-    if (!pauseActive && Port_SecondScreen_3DS_PauseSettingsOpen())
-        Port_SecondScreen_3DS_ClosePauseSettings();
-    if (pauseActive && Port_Pause3DS_MenuVisible() && !Port_SecondScreen_3DS_PauseSettingsOpen()) {
-        PresentNativePause();
-        return;
-    }
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpDirectory());
     /* Before this frame draws over it, the output texture still holds the
@@ -1429,7 +1173,7 @@ static void PresentFrame(void) {
     /* Right after a door the field loads at 240/266 for a few frames before it
      * is Full View; the screen is still fading in, so keep showing the last
      * frame (the one the fade-out ended on) instead of two geometry steps. */
-    const bool holdTop = pauseActive || Port_Widescreen_3DSHoldTop() != 0;
+    const bool holdTop = Port_Widescreen_3DSHoldTop() != 0;
     const TopView3DSPpuCoherence coherence = TopView3DS_ResolvePpuCoherence(
         topFrame.mode, virtuappu_mode1_ws_full_view != 0);
     if (coherence.forceNativeFrame) {
@@ -1651,7 +1395,7 @@ static void PresentFrame(void) {
      * emulator reports it as nearly free, which means it is a GPU wait rather
      * than CPU work. Splitting it says which half to attack. */
     if (holdTop) {
-        if (pauseActive) PlatformGpu3DS_BeginBottomOnly();
+        /* Keep displaying the previous top frame. */
     } else if (!gpuReady) {
         Platform3DS_SetStage(6);
         PlatformGpu3DS_BeginTop(sTopUpload, (unsigned)sTopPresentWidth,
@@ -1782,7 +1526,6 @@ static void PresentFrame(void) {
     Platform3DS_SetStage(10);
     if (PlatformGpu3DS_EndBottom(sBottomUploads[sBottomFrontBuffer], sBottomTextureDirty)) {
         if (sBottomTextureDirty) {
-            sNativePauseShown = false;
             sBottomTextureDirty = false;
             if (sBottomFrontScheduledTick != 0) {
                 const uint64_t latency = Platform3DS_SystemTick() - sBottomFrontScheduledTick;

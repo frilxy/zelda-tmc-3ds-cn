@@ -39,6 +39,10 @@ uint32_t Port_SecondScreen_3DS_RequestRefresh(void);
 void Port_SecondScreen_3DS_MarkSubmitted(uint32_t generation, int inGame);
 void Port_SecondScreen_3DS_PromoteSubmitted(void);
 void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out);
+bool Port_SecondScreen_3DS_InGame(void);
+void Port_SecondScreen_3DS_ToggleInventory(void);
+bool Port_SecondScreen_3DS_BeginRegionDrag(int x, int y);
+bool Port_SecondScreen_3DS_DragRegion(int x, int y, int dx, int dy);
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress);
 int Port_SecondScreen_3DS_NeedsRefresh(void);
 /* `tick` is the free-running animation tick, `paintedTick` the tick the last

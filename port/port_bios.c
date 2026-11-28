@@ -751,9 +751,10 @@ void VBlankIntrWait(void) {
         Platform3DS_PumpWithoutVBlank();
     }
     {
+        extern bool Port_SecondScreen_3DS_InGame(void);
         extern bool Port_SecondScreen_3DS_UpdateOpen(void);
         extern void Port_Audio_3DSSetPaused(bool paused);
-        if (Port_SecondScreen_3DS_UpdateOpen()) {
+        if (!Port_SecondScreen_3DS_InGame() && Port_SecondScreen_3DS_UpdateOpen()) {
             Port_Audio_3DSSetPaused(true);
             while (Platform3DS_IsRunning() && Port_SecondScreen_3DS_UpdateOpen()) {
                 Port_PPU_PresentFrame();

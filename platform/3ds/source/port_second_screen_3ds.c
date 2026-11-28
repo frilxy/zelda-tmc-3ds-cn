@@ -62,6 +62,32 @@ static uint32_t RequestTouchRefresh(void) {
     return BottomFrameState3DS_RequestTouchRefresh(&sFrameState);
 }
 
+bool Port_SecondScreen_3DS_InGame(void) {
+    SecondScreenSnapshot snap;
+    Port_SecondScreenState_Read(&snap);
+    return snap.inGame != 0;
+}
+
+void Port_SecondScreen_3DS_ToggleInventory(void) {
+    SecondScreenSnapshot snap;
+    Port_SecondScreenState_Read(&snap);
+    if (!snap.inGame || snap.introCinema) return;
+    UI_LOCK();
+    if (sUi.tab != SS_TAB_SETTINGS) {
+        sUi.tab = sUi.tab == SS_TAB_ITEMS ? SS_TAB_MAP : SS_TAB_ITEMS;
+        sUi.questView = SS_QUEST_MAIN;
+        sUi.liveItem = sUi.saveConfirm = sUi.saveResult = 0;
+        sTapTargetCount = 0;
+        RequestTouchRefresh();
+    }
+    UI_UNLOCK();
+}
+
+bool Port_SecondScreen_3DS_BeginRegionDrag(int x, int y) {
+    return BottomFrameState3DS_CanDispatchTouch(&sFrameState, 1) &&
+           Port_SecondScreen_3DS_DragRegion(x, y, 0, 0);
+}
+
 void Port_SecondScreen_3DS_OpenPauseSettings(bool updates) {
     const int mode = updates ? SS_PAUSE_SETTINGS_UPDATE : SS_PAUSE_SETTINGS_ROOT;
     UI_LOCK();
@@ -71,6 +97,7 @@ void Port_SecondScreen_3DS_OpenPauseSettings(bool updates) {
     }
     RequestTouchRefresh();
     sTapTargetCount = 0;
+    sUi.resumeTab = sUi.tab;
     sUi.pauseSettingsMode = mode;
     sUi.tab = SS_TAB_SETTINGS;
     sUi.settingsPage = updates ? SS_SETTINGS_UPDATE : SS_SETTINGS_ROOT;
@@ -96,7 +123,7 @@ void Port_SecondScreen_3DS_ClosePauseSettings(void) {
         RequestTouchRefresh();
         sTapTargetCount = 0;
         sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
-        sUi.tab = SS_TAB_MAP;
+        sUi.tab = idleOpen ? SS_TAB_MAP : sUi.resumeTab;
         sUi.settingsPage = SS_SETTINGS_ROOT;
         sUi.loadConfirmActive = 0;
         sUi.randoConfirmActive = 0;
@@ -110,6 +137,7 @@ static void ResetIdleOnlyState(void) {
     sUi.mapLive = 0;
     sMapCameraMoving = 0;
     sUi.armedRing = 0;
+    sUi.liveItem = sUi.saveConfirm = sUi.saveResult = 0;
     sUi.floorPreview = SS_NO_FLOOR;
     sUi.playerFloorDisp = SS_NO_FLOOR;
     sUi.regionState = SS_REGION_OFF;
@@ -155,6 +183,10 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     }
 
     if (!settingsOpen) {
+        UI_LOCK();
+        sUi.tab = SS_TAB_MAP;
+        sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
+        UI_UNLOCK();
         /* Preserve every reset the shared non-game cinema path performed:
          * stale map fixes, armed items and submenu state must not cross a
          * title/file-select boundary even though the picture is replaced. */
