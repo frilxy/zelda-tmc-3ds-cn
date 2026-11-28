@@ -10,6 +10,8 @@
 #include "port_save.h"
 #include "port_second_screen.h"
 #include "port_second_screen_3ds.h"
+#include "port_second_screen_theme.h"
+#include "port_pause_3ds.h"
 #include "port_second_screen_state.h"
 #include "port_widescreen.h"
 #include "platform_3ds.h"
@@ -62,6 +64,9 @@ static uint32_t sBottomTick;
 static bool sBottomReady;
 static bool sBottomTextureReady;
 static bool sBottomTextureDirty;
+static bool sNativePauseShown;
+static bool sNativePauseNavigation;
+static bool sNativePauseQuest;
 static bool sBottomWorkerPending;
 static int sBottomFrontBuffer;
 static int sBottomWorkerBuffer;
@@ -1141,10 +1146,139 @@ static void ApplyUploadLayoutSwitch(void) {
 }
 
 
+enum {
+    PAUSE_BOTTOM_WIDTH = 320,
+    PAUSE_BOTTOM_HEIGHT = 240,
+    PAUSE_NATIVE_X = (PAUSE_BOTTOM_WIDTH - GBA_NATIVE_W) / 2,
+    PAUSE_NATIVE_Y = (PAUSE_BOTTOM_HEIGHT - GBA_H) / 2,
+    PAUSE_PAGE_BUTTON_WIDTH = 38,
+    PAUSE_PAGE_BUTTON_Y = 60,
+    PAUSE_PAGE_BUTTON_HEIGHT = 56,
+    PAUSE_ACTION_X = 74,
+    PAUSE_ACTION_Y = 207,
+    PAUSE_ACTION_WIDTH = 78,
+    PAUSE_ACTION_HEIGHT = 25,
+    PAUSE_ACTION_GAP = 16,
+};
+
+static bool PauseHit(int x, int y, int left, int top, int width, int height) {
+    return x >= left && x < left + width && y >= top && y < top + height;
+}
+
+bool Port_PPU_3DS_HandlePauseTouch(int x, int y) {
+    if (!Port_Pause3DS_Active() || Port_SecondScreen_3DS_PauseSettingsOpen()) return sNativePauseShown;
+    if (!sNativePauseShown || !Port_Pause3DS_MenuVisible()) return true;
+    if (sNativePauseNavigation && PauseHit(x, y, 0, PAUSE_PAGE_BUTTON_Y, PAUSE_PAGE_BUTTON_WIDTH,
+                                         PAUSE_PAGE_BUTTON_HEIGHT)) {
+        Port_Pause3DS_QueuePage(-1);
+    } else if (sNativePauseNavigation && PauseHit(x, y, PAUSE_BOTTOM_WIDTH - PAUSE_PAGE_BUTTON_WIDTH,
+                                                 PAUSE_PAGE_BUTTON_Y, PAUSE_PAGE_BUTTON_WIDTH,
+                                                 PAUSE_PAGE_BUTTON_HEIGHT)) {
+        Port_Pause3DS_QueuePage(1);
+    } else if (sNativePauseQuest && PauseHit(x, y, PAUSE_ACTION_X, PAUSE_ACTION_Y,
+                                           PAUSE_ACTION_WIDTH, PAUSE_ACTION_HEIGHT)) {
+        Port_Pause3DS_QueueAction(false);
+    } else if (sNativePauseQuest && PauseHit(x, y, PAUSE_ACTION_X + PAUSE_ACTION_WIDTH + PAUSE_ACTION_GAP,
+                                           PAUSE_ACTION_Y, PAUSE_ACTION_WIDTH, PAUSE_ACTION_HEIGHT)) {
+        Port_Pause3DS_QueueAction(true);
+    }
+    return true;
+}
+
+static void DrawPauseButton(uint32_t* pixels, int x, int y, int width, int height, const char* label, bool pressed) {
+    Port_SecondScreenTheme_DrawMenuButton(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
+                                          x, y, width, height, "", pressed);
+    const int textWidth = Port_SecondScreenTheme_TitleTextWidth(label, 1);
+    const int textY = Port_SecondScreenTheme_InkTopForCenter(y + height / 2, 1, SS_FACE_LARGE);
+    Port_SecondScreenTheme_DrawTitleText(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
+                                         x + (width - textWidth) / 2, textY, 1, SS_TEXT_BUTTON, label);
+}
+
+static void PaintPauseMargins(uint32_t* pixels) {
+    unsigned firstPalette;
+    const uint16_t display = gIoMem[0] | (gIoMem[1] << 8);
+    const uint16_t bg3 = gIoMem[MODE1_IO_BG3CNT] | (gIoMem[MODE1_IO_BG3CNT + 1] << 8);
+    const uint8_t* indices = (display & MODE1_DISP_BG3_ON) && bg3 == 0x1e0b
+                                 ? ScenePictures_PauseIndices(&firstPalette, NULL) : NULL;
+    const uint32_t background = Port_SecondScreenTheme_Color(SSC_MENU_CREAM);
+    uint32_t palette[64];
+    if (indices) {
+        palette[0] = background;
+        for (unsigned i = 1; i < 64; ++i)
+            palette[i] = virtuappu_mode1_rgb555_to_abgr8888(gBgPltt[firstPalette * 16 + i]);
+    }
+    for (int y = 0; y < PAUSE_BOTTOM_HEIGHT; ++y) {
+        uint32_t* row = pixels + y * sBottomUploadPitch;
+        const uint8_t* ext = indices ? indices + y * SCENE_PAUSE_W + PAUSE_NATIVE_X : NULL;
+        for (int x = 0; x < PAUSE_BOTTOM_WIDTH; ++x)
+            row[x] = ext ? palette[ext[x]] : background;
+    }
+}
+
+static void PresentNativePause(void) {
+    if (!PlatformGpu3DS_BeginBottomOnly()) return;
+    Platform3DS_Heartbeat();
+
+    /* Execute the live GBA PPU at its original geometry. Its result is copied
+     * pixel for pixel, and all new controls are composed at LCD resolution. */
+    const uint16_t display = gIoMem[0] | (gIoMem[1] << 8);
+    virtuappu_registers.mode = (display & 7) == 1 || (display & 7) == 2 ? 2 : 1;
+    virtuappu_registers.frame_width = GBA_NATIVE_W;
+    virtuappu_registers.frame_height = GBA_H;
+    virtuappu_registers.frame_pitch = sTopUploadPitch;
+    virtuappu_mode1_ws_full_view = 0;
+    virtuappu_mode1_ws_hud_right_anchor = 0;
+    virtuappu_mode1_ws_msg_shift = 0;
+    virtuappu_mode1_ws_win0_lines = NULL;
+    virtuappu_mode1_bg1_picture = NULL;
+    virtuappu_mode1_bg3_repeat = false;
+    virtuappu_mode1_bg_repeat_mask = 0;
+    virtuappu_mode1_bg3_hdma_native_bounds = false;
+    virtuappu_mode1_bg2x_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x28, gIoMem + 0x2c) != 0;
+    virtuappu_mode1_bg2y_hdma_strobe = port_hdma_dest_overlaps(gIoMem + 0x2c, gIoMem + 0x30) != 0;
+    virtuappu_mode1_pre_line_callback = port_hdma_has_active_channels() ? port_hdma_step_line : NULL;
+    port_hdma_vblank_reset();
+    virtuappu_render_frame();
+
+    /* The worker can only write to the opposite buffer. FrameBegin has
+     * retired the GPU transfer that last read this front buffer. */
+    uint32_t* pixels = sBottomUploads[sBottomFrontBuffer];
+    PaintPauseMargins(pixels);
+    for (int y = 0; y < GBA_H; ++y)
+        memcpy(pixels + (y + PAUSE_NATIVE_Y) * sBottomUploadPitch + PAUSE_NATIVE_X,
+               sTopUpload + y * sTopUploadPitch, GBA_NATIVE_W * sizeof(*pixels));
+
+    const char* title = Port_Pause3DS_PageName();
+    const bool navigation = Port_Pause3DS_PageNavigationAvailable();
+    const bool quest = Port_Pause3DS_QuestPage();
+    Port_SecondScreenTheme_DrawChip(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
+                                    PAUSE_NATIVE_X, 8, 112, 23, 1, SS_CHIP_RED);
+    Port_SecondScreenTheme_DrawTitleText(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
+                                         PAUSE_NATIVE_X + 10,
+                                         Port_SecondScreenTheme_InkTopForCenter(19, 1, SS_FACE_LARGE),
+                                         1, SS_TEXT_WHITE, title);
+    if (navigation) {
+        DrawPauseButton(pixels, 4, 93, 32, 23, "ZL", false);
+        DrawPauseButton(pixels, PAUSE_BOTTOM_WIDTH - 36, 93, 32, 23, "ZR", false);
+    }
+    if (quest) {
+        const unsigned selected = Port_Pause3DS_QuestAction();
+        DrawPauseButton(pixels, PAUSE_ACTION_X, PAUSE_ACTION_Y, PAUSE_ACTION_WIDTH, PAUSE_ACTION_HEIGHT,
+                        "设置", selected == PORT_PAUSE3DS_ACTION_SETTINGS);
+        DrawPauseButton(pixels, PAUSE_ACTION_X + PAUSE_ACTION_WIDTH + PAUSE_ACTION_GAP,
+                        PAUSE_ACTION_Y, PAUSE_ACTION_WIDTH, PAUSE_ACTION_HEIGHT,
+                        "更新", selected == PORT_PAUSE3DS_ACTION_UPDATES);
+    }
+    if (PlatformGpu3DS_EndBottom(pixels, true)) {
+        sNativePauseShown = true;
+        sNativePauseNavigation = navigation;
+        sNativePauseQuest = quest;
+        sBottomReady = false;
+    }
+}
+
 static void PresentFrame(void);
 
-/* The X and Y HUD buttons' tiles live in OBJ VRAM only while the frame renders
- * (port/port_hud_xy.h). */
 void Port_PPU_PresentFrame(void) {
     if (!sInitialized)
         return;
@@ -1153,6 +1287,13 @@ void Port_PPU_PresentFrame(void) {
 
 static void PresentFrame(void) {
     ApplyUploadLayoutSwitch();
+    const bool pauseActive = Port_Pause3DS_Active();
+    if (!pauseActive && Port_SecondScreen_3DS_PauseSettingsOpen())
+        Port_SecondScreen_3DS_ClosePauseSettings();
+    if (pauseActive && Port_Pause3DS_MenuVisible() && !Port_SecondScreen_3DS_PauseSettingsOpen()) {
+        PresentNativePause();
+        return;
+    }
     PortPpuGpu3DS_FinishParityCheck();
     PortPpuGpu3DS_WriteFrameCapture(Port_PPU_3DS_LastDumpDirectory());
     /* Before this frame draws over it, the output texture still holds the
@@ -1175,7 +1316,7 @@ static void PresentFrame(void) {
     /* Right after a door the field loads at 240/266 for a few frames before it
      * is Full View; the screen is still fading in, so keep showing the last
      * frame (the one the fade-out ended on) instead of two geometry steps. */
-    const bool holdTop = Port_Widescreen_3DSHoldTop() != 0;
+    const bool holdTop = pauseActive || Port_Widescreen_3DSHoldTop() != 0;
     const TopView3DSPpuCoherence coherence = TopView3DS_ResolvePpuCoherence(
         topFrame.mode, virtuappu_mode1_ws_full_view != 0);
     if (coherence.forceNativeFrame) {
@@ -1397,7 +1538,7 @@ static void PresentFrame(void) {
      * emulator reports it as nearly free, which means it is a GPU wait rather
      * than CPU work. Splitting it says which half to attack. */
     if (holdTop) {
-        /* nothing: the screen keeps its last frame */
+        if (pauseActive) PlatformGpu3DS_BeginBottomOnly();
     } else if (!gpuReady) {
         Platform3DS_SetStage(6);
         PlatformGpu3DS_BeginTop(sTopUpload, (unsigned)sTopPresentWidth,
@@ -1528,6 +1669,7 @@ static void PresentFrame(void) {
     Platform3DS_SetStage(10);
     if (PlatformGpu3DS_EndBottom(sBottomUploads[sBottomFrontBuffer], sBottomTextureDirty)) {
         if (sBottomTextureDirty) {
+            sNativePauseShown = false;
             sBottomTextureDirty = false;
             if (sBottomFrontScheduledTick != 0) {
                 const uint64_t latency = Platform3DS_SystemTick() - sBottomFrontScheduledTick;

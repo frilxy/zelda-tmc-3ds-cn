@@ -41,6 +41,47 @@ static uint32_t RequestTouchRefresh(void) {
     return BottomFrameState3DS_RequestTouchRefresh(&sFrameState);
 }
 
+void Port_SecondScreen_3DS_OpenPauseSettings(bool updates) {
+    const int mode = updates ? SS_PAUSE_SETTINGS_UPDATE : SS_PAUSE_SETTINGS_ROOT;
+    UI_LOCK();
+    if (sUi.pauseSettingsMode == mode) {
+        UI_UNLOCK();
+        return;
+    }
+    RequestTouchRefresh();
+    sTapTargetCount = 0;
+    sUi.pauseSettingsMode = mode;
+    sUi.tab = SS_TAB_SETTINGS;
+    sUi.settingsPage = updates ? SS_SETTINGS_UPDATE : SS_SETTINGS_ROOT;
+    sUi.armedRing = 0;
+    sUi.loadConfirmActive = 0;
+    sUi.randoConfirmActive = 0;
+    UI_UNLOCK();
+    if (updates)
+        BeginUpdatePage();
+}
+
+bool Port_SecondScreen_3DS_PauseSettingsOpen(void) {
+    UI_LOCK();
+    const bool open = sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE;
+    UI_UNLOCK();
+    return open;
+}
+
+void Port_SecondScreen_3DS_ClosePauseSettings(void) {
+    UI_LOCK();
+    if (sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE) {
+        RequestTouchRefresh();
+        sTapTargetCount = 0;
+        sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
+        sUi.tab = SS_TAB_MAP;
+        sUi.settingsPage = SS_SETTINGS_ROOT;
+        sUi.loadConfirmActive = 0;
+        sUi.randoConfirmActive = 0;
+    }
+    UI_UNLOCK();
+}
+
 static void IdleBackRect(int width, int height, float* x0, float* y0, float* x1, float* y1) {
     float u = (float)(width < height ? width : height) / 720.0f;
     int32_t ts = (width < height ? width : height) / 240;
@@ -78,14 +119,16 @@ static void ResetIdleOnlyState(void) {
     sUi.playerFloorDisp = SS_NO_FLOOR;
     sUi.regionState = SS_REGION_OFF;
     sUi.questView = SS_QUEST_MAIN;
-    sUi.settingsPage = SS_SETTINGS_ROOT;
-    sUi.loadConfirmActive = 0;
-    sUi.randoConfirmActive = 0;
-    if (sIdleOwnsSettingsTab) sUi.tab = SS_TAB_MAP;
+    if (sUi.pauseSettingsMode == SS_PAUSE_SETTINGS_NONE) {
+        sUi.settingsPage = SS_SETTINGS_ROOT;
+        sUi.loadConfirmActive = 0;
+        sUi.randoConfirmActive = 0;
+        if (sIdleOwnsSettingsTab) sUi.tab = SS_TAB_MAP;
+    }
+    sIdleOwnsSettingsTab = 0;
     UI_UNLOCK();
     sLastFix.valid = 0;
     sCam.valid = 0;
-    sIdleOwnsSettingsTab = 0;
     __atomic_store_n(&sIdleBackVisible, 0, __ATOMIC_RELEASE);
 }
 
@@ -140,8 +183,10 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     SecondScreenSnapshot settingsSnapshot = *snap;
     settingsSnapshot.inGame = 1;
     UI_LOCK();
-    sUi.tab = SS_TAB_SETTINGS;
-    sIdleOwnsSettingsTab = 1;
+    if (sUi.pauseSettingsMode == SS_PAUSE_SETTINGS_NONE) {
+        sUi.tab = SS_TAB_SETTINGS;
+        sIdleOwnsSettingsTab = 1;
+    }
     UI_UNLOCK();
     Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, &settingsSnapshot, tick);
 

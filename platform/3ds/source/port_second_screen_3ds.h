@@ -14,6 +14,11 @@ extern "C" {
 bool Port_SecondScreen_3DS_UpdateOpen(void);
 bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride);
 
+/* Main-thread routing for the existing compositor while the native menu is paused. */
+void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
+bool Port_SecondScreen_3DS_PauseSettingsOpen(void);
+void Port_SecondScreen_3DS_ClosePauseSettings(void);
+
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick);
 void Port_SecondScreen_3DS_ResetFrameState(void);

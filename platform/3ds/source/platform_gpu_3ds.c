@@ -1833,6 +1833,17 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
     ++sStats.topTransfers;
 }
 
+bool PlatformGpu3DS_BeginBottomOnly(void) {
+    if (!sReady) return false;
+    if (sFrameActive) return true;
+    if (!C3D_FrameBegin(0)) {
+        ++sStats.frameBeginFailures;
+        return false;
+    }
+    sFrameActive = true;
+    return true;
+}
+
 bool PlatformGpu3DS_BeginCustomTop(void) {
     if (!sReady) return false;
     if (sFrameActive) return true;

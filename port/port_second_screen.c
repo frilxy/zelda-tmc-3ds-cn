@@ -66,6 +66,7 @@
 #ifdef TMC_3DS
 #include "platform_3ds.h"
 #include "port_dump_state_3ds.h"
+#include "port_second_screen_3ds.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -172,8 +173,13 @@ enum {
     SS_SETTINGS_RANDOMIZER,
 #ifdef TMC_3DS
     SS_SETTINGS_UPDATE,
+    SS_SETTINGS_CLOSE,
 #endif
 };
+
+#ifdef TMC_3DS
+enum { SS_PAUSE_SETTINGS_NONE = 0, SS_PAUSE_SETTINGS_ROOT, SS_PAUSE_SETTINGS_UPDATE };
+#endif
 
 /* Settings rows, top to bottom. The second-screen-only toggles persist
  * through their Port_Config accessors alone; the port-wide rows reuse the
@@ -266,6 +272,9 @@ static int sTapTargetCount = 0;
 static struct {
     uint8_t tab;
     uint8_t settingsPage;
+#ifdef TMC_3DS
+    uint8_t pauseSettingsMode;
+#endif
     uint8_t wholeMap;    /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;   /* 0 none, 1 = next item tap assigns A, 2 = B */
     int8_t floorPreview; /* plaque-selected display floor, SS_NO_FLOOR = live */
@@ -952,11 +961,13 @@ static void DrawPin(const SSurf* s, float x, float y, float cell, uint32_t color
     DrawPixelArt(s, kPinArt, 12, px, py, cell, color);
 }
 
+#ifndef TMC_3DS
 /* Three sliders on a 9x9 grid — the settings-button glyph. A gear shape
  * reads as a blob at this size (same call the reference made). */
 static const char* const kCogArt[9] = {
     ".###.....", "#########", ".###.....", ".....###.", "#########", ".....###.", "..###....", "#########", "..###....",
 };
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Target list                                                        */
@@ -2419,6 +2430,14 @@ static int GetSettingState(int row, char* out, int outCap) {
  * parchment, chips, font, and palette keep it native to this game. */
 #ifdef TMC_3DS
 #include "../platform/3ds/source/update_ui_3ds.inc"
+
+static void BeginUpdatePage(void) {
+    UpdateUI_Reset();
+    UpdateStatus status;
+    Updater_GetStatus(&status);
+    if (status.state != UPDATE_AVAILABLE)
+        Updater_Check();
+}
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0, float ry0,
@@ -2434,9 +2453,20 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         hms = 1;
     float headerH = MENU_TEXT_BOX * hms + 24 * u;
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2, iy0, SettingsPageTitle(page), hms, u);
-    if (page != SS_SETTINGS_ROOT) {
-        DrawSettingsBack(s, tl, ix0 + 4 * u, iy0, headerH, SettingsBackPage(page), u, ts);
+    int backPage = SettingsBackPage(page);
+    bool showBack = page != SS_SETTINGS_ROOT;
+#ifdef TMC_3DS
+    UI_LOCK();
+    const int pauseMode = sUi.pauseSettingsMode;
+    UI_UNLOCK();
+    if ((page == SS_SETTINGS_ROOT && pauseMode != SS_PAUSE_SETTINGS_NONE) ||
+        (page == SS_SETTINGS_UPDATE && pauseMode == SS_PAUSE_SETTINGS_UPDATE)) {
+        backPage = SS_SETTINGS_CLOSE;
+        showBack = true;
     }
+#endif
+    if (showBack)
+        DrawSettingsBack(s, tl, ix0 + 4 * u, iy0, headerH, backPage, u, ts);
 
     float x0 = ix0 + 6 * u, x1 = ix1 - 6 * u;
     float y0 = iy0 + headerH + 12 * u;
@@ -2966,7 +2996,7 @@ float Port_SecondScreen_TestSidebarRingRadius(float vitalsBottom, float chipY, f
 
 /* Sidebar, right edge: hearts on top (the most-glanced info), the R
  * prompt band under them, the A/B equip rings centered in the middle, the
- * rupee/keys chip anchored to the bottom, just above the tab bar. */
+ * rupee/keys chip anchored near the bottom. */
 static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float x, float y, float w,
                          float h, float u, int32_t ts, uint32_t tick, int armedRing) {
     int isDungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
@@ -3086,7 +3116,7 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
             ry += rowH + 6 * u;
         }
 #ifdef TMC_3DS
-        /* Give the rupee row more space above it while keeping room for the tabs. */
+        /* Give the rupee row more space above it. */
         ry += 16 * u;
 #endif
         {
@@ -3121,6 +3151,7 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
 /*  Tab bar                                                            */
 /* ------------------------------------------------------------------ */
 
+#ifndef TMC_3DS
 /* One tab: the pause menu's labelled button (9.png's SLEEP/SAVE plate).
  * The tab that owns the panel is the SAME button at the SAME geometry,
  * drawn in the button's own pressed state and wearing a thin gold keyline
@@ -3189,6 +3220,7 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     DrawPixelArt(s, kCogArt, 9, floorf((sx0 + sx1) / 2 - 4.5f * cog), floorf(y + bh / 2 - 4.5f * cog), cog,
                  Port_SecondScreenTheme_Color(SSC_BANNER_NAVY));
 }
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Frame composition                                                  */
@@ -3199,7 +3231,6 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
  * average with ~89 ms peaks, which is the largest CPU cost left on the Old 3DS,
  * but the total alone does not say which phase to attack -- and guessing that
  * from reading the code is how earlier optimisation attempts went wrong. */
-extern unsigned long long Platform3DS_SystemTick(void);
 enum { SS_PHASE_BACKDROP, SS_PHASE_PANEL, SS_PHASE_SIDEBAR, SS_PHASE_TABBAR, SS_PHASE_COUNT };
 static unsigned long long sSsPhaseTicks[SS_PHASE_COUNT];
 static unsigned long long sSsPhaseMax[SS_PHASE_COUNT];
@@ -3238,8 +3269,7 @@ void Port_SecondScreen_PhaseTicks(unsigned long long* totals, unsigned long long
 
 #ifdef TMC_3DS
 static void PaintUnavailableWorldMap(const SSurf* s, int x0, int y0, int x1, int y1) {
-    /* No terrain, hints, player marker or map hit targets before ITEM_MAP.
-     * Keep the other tabs and equipment available during the prologue. */
+    /* There is no terrain, player marker or map hit target before ITEM_MAP. */
     int32_t w, h;
     const uint32_t* frame = Port_SecondScreenWorldMap_GetFrameImage(&w, &h);
     if (frame) {
@@ -3354,7 +3384,11 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     Port_SecondScreenTheme_DrawBackdrop(s.px, s.w, s.h, s.stride, 0, 0, s.w, s.h, ts);
     SS_MARK(SS_PHASE_BACKDROP);
 
-    float tabH = 96 * u;
+#ifdef TMC_3DS
+    const float tabH = 0;
+#else
+    const float tabH = 96 * u;
+#endif
     float sideW = 220 * u; /* widened for the grown rings/chip; map stays dominant */
     float mx0 = 10 * u, my0 = 10 * u;
     float mx1 = tab == SS_TAB_SETTINGS ? width - 10 * u : width - sideW - 4 * u;
@@ -3400,9 +3434,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
                      armedRing);
     }
     SS_MARK(SS_PHASE_SIDEBAR);
+#ifndef TMC_3DS
     PaintTabBar(&s, &tl, u, ts, tab);
-    SS_MARK(SS_PHASE_TABBAR);
-#ifdef TMC_3DS
+#else
     ++sSsPhasePaints;
 #endif
 #ifdef TMC_3DS
@@ -3480,6 +3514,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         return;
 #endif
     switch (hit.action) {
+#ifndef TMC_3DS
         case SS_ACT_TAB:
             UI_LOCK();
             /* Re-tapping the active panel tab returns to the map — the
@@ -3490,21 +3525,23 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.settingsPage = SS_SETTINGS_ROOT;
             UI_UNLOCK();
             break;
+#endif
         case SS_ACT_SETTINGS_PAGE:
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();
 #ifdef TMC_3DS
-            if (hit.arg == SS_SETTINGS_UPDATE) {
-                UpdateUI_Reset();
-                UpdateStatus status;
-                Updater_GetStatus(&status);
-                if (status.state != UPDATE_AVAILABLE)
-                    Updater_Check();
-            }
+            if (hit.arg == SS_SETTINGS_UPDATE)
+                BeginUpdatePage();
 #endif
             break;
         case SS_ACT_SETTINGS_BACK:
+#ifdef TMC_3DS
+            if (hit.arg == SS_SETTINGS_CLOSE) {
+                Port_SecondScreen_3DS_ClosePauseSettings();
+                break;
+            }
+#endif
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();

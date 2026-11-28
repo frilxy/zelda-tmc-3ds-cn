@@ -6,6 +6,7 @@
 #include "port_audio_3ds.h"
 #include "port_second_screen_3ds.h"
 #include "port_second_screen_sync_3ds.h"
+#include "port_pause_3ds.h"
 
 #include <3ds.h>
 
@@ -238,6 +239,7 @@ void Platform3DS_EnterGameplayDisplay(void) {
 }
 
 static uint16_t MapKeysToGba(uint32_t keys) {
+    if (Port_Pause3DS_Active() && Port_SecondScreen_3DS_PauseSettingsOpen()) return 0x03ff;
     enum {
         GBA_A = 1u << 0,
         GBA_B = 1u << 1,
@@ -591,10 +593,17 @@ static void PollInput(void) {
         memset(&sCStickPosition, 0, sizeof(sCStickPosition));
         sCStickHeld = false;
     }
+    if (Port_Pause3DS_Active() && !Port_SecondScreen_3DS_PauseSettingsOpen()) {
+        const uint32_t shoulders = sDown & (KEY_ZL | KEY_ZR);
+        if (shoulders == KEY_ZL) Port_Pause3DS_QueuePage(-1);
+        if (shoulders == KEY_ZR) Port_Pause3DS_QueuePage(1);
+    }
     if (sDown & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
-        Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
+        extern bool Port_PPU_3DS_HandlePauseTouch(int x, int y);
+        if (!Port_PPU_3DS_HandlePauseTouch(touch.px, touch.py))
+            Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
     }
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;

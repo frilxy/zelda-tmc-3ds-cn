@@ -26,6 +26,9 @@
 #include "port_softslots.h"
 #include "rando/rando_runtime.h"
 #endif
+#ifdef TMC_3DS
+#include "port_pause_3ds.h"
+#endif
 
 extern void sub_080A4DB8(u32);
 
@@ -34,6 +37,87 @@ void sub_080A51D4(void);
 bool32 sub_080A51F4(void);
 void sub_080A5F48(Item, u32);
 void sub_080A57F4(void);
+
+#ifdef TMC_3DS
+extern void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
+
+enum {
+    PAUSE_QUEST_SETTINGS_SLOT = 4,
+    PAUSE_QUEST_UPDATES_SLOT = 5,
+};
+
+static int sPausePageRequest;
+static unsigned sPauseActionRequest;
+
+bool Port_Pause3DS_Active(void) {
+    return gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_PAUSEMENU;
+}
+
+bool Port_Pause3DS_MenuVisible(void) {
+    /* Variant 0 initializes the menu. Subtask_Die (4) displays the restored room. */
+    return Port_Pause3DS_Active() && (gUI.nextToLoad == 2 || gUI.nextToLoad == 3) && gPauseMenuOptions.unk11 != 0;
+}
+
+bool Port_Pause3DS_QuestPage(void) {
+    return Port_Pause3DS_MenuVisible() && gPauseMenuOptions.screen == PauseMenuScreen_2;
+}
+
+const char* Port_Pause3DS_PageName(void) {
+    if (!Port_Pause3DS_MenuVisible()) {
+        return "";
+    }
+    switch (gPauseMenuOptions.screen) {
+        case PauseMenuScreen_1:
+            return "物品";
+        case PauseMenuScreen_2:
+            return "收集";
+        case PauseMenuScreen_4:
+        case PauseMenuScreen_5:
+        case PauseMenuScreen_6:
+            return "地图";
+        case PauseMenuScreen_7:
+            return "幸福碎片";
+        case PauseMenuScreen_8:
+            return "剑技";
+        case PauseMenuScreen_10:
+        case PauseMenuScreen_11:
+            return "保存";
+        default:
+            return "";
+    }
+}
+
+unsigned Port_Pause3DS_QuestAction(void) {
+    if (!Port_Pause3DS_QuestPage() || gMenu.menuType == 0) {
+        return PORT_PAUSE3DS_ACTION_NONE;
+    }
+    switch (gMenu.field_0x3) {
+        case PAUSE_QUEST_SETTINGS_SLOT:
+            return PORT_PAUSE3DS_ACTION_SETTINGS;
+        case PAUSE_QUEST_UPDATES_SLOT:
+            return PORT_PAUSE3DS_ACTION_UPDATES;
+        default:
+            return PORT_PAUSE3DS_ACTION_NONE;
+    }
+}
+
+bool Port_Pause3DS_PageNavigationAvailable(void) {
+    return Port_Pause3DS_Active() && gUI.nextToLoad == 2 && sub_080A51F4() && gMenu.field_0xc != NULL &&
+           (gMenu.field_0xc[1] != 0 || gMenu.field_0xc[2] != 0);
+}
+
+void Port_Pause3DS_QueuePage(int direction) {
+    if (direction != 0 && Port_Pause3DS_PageNavigationAvailable()) {
+        sPausePageRequest = direction < 0 ? -1 : 1;
+    }
+}
+
+void Port_Pause3DS_QueueAction(bool updates) {
+    if (Port_Pause3DS_QuestPage() && gUI.nextToLoad == 2 && sub_080A51F4() && gMenu.menuType != 0) {
+        sPauseActionRequest = updates ? PORT_PAUSE3DS_ACTION_UPDATES : PORT_PAUSE3DS_ACTION_SETTINGS;
+    }
+}
+#endif
 
 void Subtask_PauseMenu(void) {
 #ifdef PC_PORT
@@ -77,6 +161,10 @@ void PauseMenu_Variant0(void) {
     const OverworldLocation* location;
     int r0, r1;
 
+#ifdef TMC_3DS
+    sPausePageRequest = 0;
+    sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+#endif
     UpdateVisibleFusionMapMarkers();
     sub_080A4D34();
     r1 = 4;
@@ -117,6 +205,13 @@ void PauseMenu_Variant2(void) {
     u32 uVar2;
     int iVar4;
     s32 bVar5;
+#ifdef TMC_3DS
+    const int pageRequest = sPausePageRequest;
+    sPausePageRequest = 0;
+    if (!sub_080A51F4() || gPauseMenuOptions.screen != PauseMenuScreen_2) {
+        sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+    }
+#endif
 
 #ifdef PC_PORT
     /* issue #155: randomizer homewarp — GBA-randomizer parity for the
@@ -135,15 +230,24 @@ void PauseMenu_Variant2(void) {
             case START_BUTTON:
                 iVar1 = 0;
                 break;
+#ifndef TMC_3DS
             case L_BUTTON:
                 iVar1 = 1;
                 break;
             case R_BUTTON:
                 iVar1 = 2;
                 break;
+#endif
             case B_BUTTON:
                 iVar1 = 3;
                 break;
+#ifdef TMC_3DS
+            case 0:
+                if (pageRequest != 0 && sPauseActionRequest == PORT_PAUSE3DS_ACTION_NONE) {
+                    iVar1 = pageRequest < 0 ? 1 : 2;
+                }
+                break;
+#endif
         }
         if (iVar1 >= 0) {
             switch (bVar5 = gMenu.field_0xc[iVar1]) {
@@ -169,6 +273,9 @@ void PauseMenu_Variant2(void) {
     }
     bVar5 = sub_080A50A0(gPauseMenuOptions.screen2);
     if (gPauseMenuOptions.screen != bVar5) {
+#ifdef TMC_3DS
+        sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+#endif
         gPauseMenuOptions.screen2 = bVar5;
         sub_080A51D4();
         if (bVar5 == 0xe) {
@@ -226,6 +333,7 @@ void PauseMenu_Variant5(void) {
 }
 
 void sub_080A5128(void) {
+#ifndef TMC_3DS
     int r5, t;
     struct {
         int x;
@@ -273,6 +381,7 @@ void sub_080A5128(void) {
     gOamCmd.x = p[2].x;
     gOamCmd.y = p[2].y;
     DrawDirect(r5, 2);
+#endif
 }
 
 void sub_080A51D4(void) {
@@ -819,10 +928,22 @@ void sub_080A56A0(void) {
             break;
     }
 
+#ifdef TMC_3DS
+    const unsigned action = sPauseActionRequest;
+    sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+    if (action != PORT_PAUSE3DS_ACTION_NONE) {
+        gMenu.field_0x3 = action == PORT_PAUSE3DS_ACTION_UPDATES ? PAUSE_QUEST_UPDATES_SLOT : PAUSE_QUEST_SETTINGS_SLOT;
+        uVar2 = 0xff;
+    }
+#endif
     if (uVar2 != 0xff) {
         gMenu.field_0x3 = uVar2;
         SoundReq(SFX_TEXTBOX_CHOICE);
+#ifdef TMC_3DS
+    } else if (action != PORT_PAUSE3DS_ACTION_NONE || gInput.newKeys == A_BUTTON) {
+#else
     } else if (gInput.newKeys == A_BUTTON) {
+#endif
         uVar2 = gMenu.field_0x3;
         iVar1 = 0;
         switch (uVar2) {
@@ -835,12 +956,20 @@ void sub_080A56A0(void) {
                     }
                 }
                 break;
+#ifdef TMC_3DS
+            case PAUSE_QUEST_SETTINGS_SLOT:
+            case PAUSE_QUEST_UPDATES_SLOT:
+                Port_SecondScreen_3DS_OpenPauseSettings(uVar2 == PAUSE_QUEST_UPDATES_SLOT);
+                SoundReq(SFX_TEXTBOX_SELECT);
+                break;
+#else
             case 4:
                 iVar1 = 9;
                 break;
             case 5:
                 iVar1 = 10;
                 break;
+#endif
         }
         if (iVar1 != 0) {
             sub_080A4E84(iVar1);
@@ -876,11 +1005,18 @@ void sub_080A56A0(void) {
             case 2:
                 item = 0x70;
                 break;
+#ifdef TMC_3DS
+            case PAUSE_QUEST_SETTINGS_SLOT:
+            case PAUSE_QUEST_UPDATES_SLOT:
+                item = 0; /* The 3DS footer supplies the labels. */
+                break;
+#else
             case 4:
                 item = 0x74;
                 break;
             case 5:
                 item = 0x73;
+#endif
         }
     }
     sub_080A6F6C(TEXT_INDEX(TEXT_ITEMS, 0) + item);
@@ -914,9 +1050,17 @@ void sub_080A57F4(void) {
     } else {
         frameIndex++;
     }
-    DrawDirect(DRAW_DIRECT_SPRITE_INDEX, frameIndex);
+#ifdef TMC_3DS
+    if (Port_Pause3DS_QuestAction() == PORT_PAUSE3DS_ACTION_NONE)
+#endif
+        DrawDirect(DRAW_DIRECT_SPRITE_INDEX, frameIndex);
 
     for (index = 0, pbVar6 = (struct_gUnk_08128C14*)((u8*)puVar8 + 5); index < 0x10; pbVar6++, index++) {
+#ifdef TMC_3DS
+        if (index == PAUSE_QUEST_SETTINGS_SLOT || index == PAUSE_QUEST_UPDATES_SLOT) {
+            continue;
+        }
+#endif
         uVar5 = GetPauseMenu2ItemSlot(index);
         if (uVar5 != 0) {
             puVar10 = &puVar8[index];

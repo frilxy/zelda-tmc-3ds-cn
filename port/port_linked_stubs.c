@@ -49,6 +49,7 @@
 #endif
 #endif
 #include "port_widescreen.h"
+#include "port_pause_3ds.h"
 #include "port_hdma.h"
 #include "port_widescreen_banner_state.h"
 #include "port_horizontal_minish_path.h"
@@ -1763,8 +1764,8 @@ int Port_Widescreen_PauseBackgroundShown(void) {
 int Port_Widescreen_PauseWide(void) {
 #ifdef TMC_3DS
     extern bool Port_SoftSlots_IsPauseActive(void);
-    if (gMain.task != TASK_GAME || !Port_Config_3DSFullViewComboEnabled() || !Port_Config_GpuRenderer() ||
-        !Port_SoftSlots_IsPauseActive())
+    if (Port_Pause3DS_Active() || gMain.task != TASK_GAME || !Port_Config_3DSFullViewComboEnabled() ||
+        !Port_Config_GpuRenderer() || !Port_SoftSlots_IsPauseActive())
         return 0;
     const unsigned dispcnt = gScreen.lcd.displayControl;
     return !(dispcnt & DISPCNT_FORCED_BLANK) && (dispcnt & DISPCNT_BG3_ON) && gScreen.bg3.xOffset == 0 &&
