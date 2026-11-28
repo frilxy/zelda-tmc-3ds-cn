@@ -29,14 +29,19 @@ int main(int argc,char** argv) {
     static uint32_t bottom[320*240],top[400*240], paddedTop[512*256];
     SSurf s={bottom,320,240,320}; TargetList targets={0}; SecondScreenSnapshot snap={0};
     Port_SecondScreenTheme_DrawBackdrop(bottom,320,240,320,0,0,320,240,2);
-    PaintSettingsPanel(&s,&snap,&targets,10.f/3,10.f/3,320-10.f/3,204,1.f/3,2,SS_SETTINGS_ROOT,0,0,0,0);
-    assert(targets.n==5);
-    for(int i=0;i<5;i++) {
-        assert(targets.t[i].y1-targets.t[i].y0>=25);
-        assert(targets.t[i].x0>=0 && targets.t[i].x1<=320);
-        if(i) assert(targets.t[i].y0>=targets.t[i-1].y1);
+    PaintSettingsSlab(&s, &snap, &targets, 1.f / 3, 2, SS_SETTINGS_ROOT, 0, 0, 0, 0);
+    assert(targets.n == 6);
+    assert(targets.t[0].action == SS_ACT_SETTINGS_BACK && targets.t[0].arg == SS_SETTINGS_CLOSE);
+    for (int i = 0; i < targets.n; ++i) {
+        const TapTarget target = targets.t[i];
+        assert(target.x0 >= SETTINGS_SLAB_MARGIN && target.x1 <= 320 - SETTINGS_SLAB_MARGIN);
+        assert(target.y0 >= SETTINGS_SLAB_MARGIN && target.y1 <= 240 - SETTINGS_SLAB_MARGIN);
+        if (i > 0) {
+            assert(target.y1 - target.y0 >= 25);
+            assert(target.y0 >= targets.t[i - 1].y1);
+        }
     }
-    assert(targets.t[4].arg==SS_SETTINGS_UPDATE);
+    assert(targets.t[5].arg == SS_SETTINGS_UPDATE);
     Capture("settings.raw",bottom,320,240,320);
     sUi.tab=SS_TAB_SETTINGS;sUi.settingsPage=SS_SETTINGS_UPDATE;
     for(int mode=0;mode<5;mode++) {
@@ -44,7 +49,7 @@ int main(int argc,char** argv) {
         testStatus.state=mode==3?UPDATE_DOWNLOADING:mode==4?UPDATE_ERROR:UPDATE_AVAILABLE;
         testStatus.progress=57;testStatus.revision++;
         if(mode==4)strcpy(testStatus.message,"CONNECTION FAILED - RETRY");
-        PaintSettingsPanel(&s,&snap,&targets,10.f/3,10.f/3,320-10.f/3,204,1.f/3,2,SS_SETTINGS_UPDATE,0,0,0,0);
+        PaintSettingsSlab(&s, &snap, &targets, 1.f / 3, 2, SS_SETTINGS_UPDATE, 0, 0, 0, 0);
         for(int i=0;i<targets.n;i++)for(int j=i+1;j<targets.n;j++) {
             TapTarget a=targets.t[i],b=targets.t[j];
             assert(a.x1<=b.x0 || b.x1<=a.x0 || a.y1<=b.y0 || b.y1<=a.y0);
