@@ -1725,7 +1725,7 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     if (sUi.regionState == SS_REGION_VIEW && sUi.regionId == region)
         sUi.regionViewport.ready = true;
     UI_UNLOCK();
-    (void)tl; /* The region viewport takes drags. B returns to the overview. */
+    (void)tl; /* The region viewport takes drags; Back lives in the right column. */
 #else
     float chip[4];
     DrawMapIconChipAt(s, "\u21a9", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
@@ -2026,6 +2026,12 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
  *   row 2  the four elements
  *   row 3  grip ring, bracelets, flippers
  */
+static void DrawBackButton(const SSurf* s, TargetList* tl, float x, float y, float w, float h,
+                           int action, int arg, float u, int32_t ts) {
+    DrawMenuButton(s, x, y, x + w, y + h, "返回", 0, 0, u, ts);
+    AddTarget(tl, x, y, x + w, y + h, action, arg);
+}
+
 #ifdef TMC_3DS
 static void PaintTechniqueSelection(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl,
                                     int px, int py) {
@@ -2061,22 +2067,16 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                         ? Port_SecondScreenQuest_DrawKinstones(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap)
                         : Port_SecondScreenQuest_DrawTechniques(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap);
         if (drawn) {
-            float chip[4];
 #ifdef TMC_3DS
             const bool techniques = questView == SS_QUEST_TECHNIQUES;
             if (techniques) PaintTechniqueSelection(s, snap, tl, px, py);
-            const float centerY = ry0 + 16;
-            chip[0] = rx1 - 54;
-            chip[1] = centerY - 8;
-            chip[2] = rx1 - 12;
-            chip[3] = centerY + 8;
-            DrawLabelPlate(s, chip[0], chip[1], chip[2], chip[3], SS_PLATE_TITLE);
-            MenuTextCentered(s, "返回", (chip[0] + chip[2]) / 2, centerY, 1, SS_TEXT_PLATE_INK);
+            MenuTextCenteredFace(s, techniques ? "剑技" : "幸福碎片", px + 103, py + 16, 1,
+                                 SS_TEXT_NAVY, SS_FACE_LARGE);
+            DrawBackButton(s, tl, rx1 - 66, ry0 + 6, 54, 20, SS_ACT_QUESTVIEW, SS_QUEST_MAIN, u, ts);
 #else
+            float chip[4];
             DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
-#endif
             AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
-#ifndef TMC_3DS
             AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
 #endif
             return;
@@ -2389,8 +2389,7 @@ static void DrawSettingsBack(const SSurf* s, TargetList* tl, float x0, float y0,
     float w = 154 * u;
     if (w < 54)
         w = 54;
-    DrawMenuButton(s, x0, y0, x0 + w, y0 + h, "返回", 0, 0, u, ts);
-    AddTarget(tl, x0, y0, x0 + w, y0 + h, SS_ACT_SETTINGS_BACK, (uint8_t)backPage);
+    DrawBackButton(s, tl, x0, y0, w, h, SS_ACT_SETTINGS_BACK, backPage, u, ts);
 }
 
 static int GetSettingState(int row, char* out, int outCap);
@@ -2615,7 +2614,9 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     if (hms < 1)
         hms = 1;
     float headerH = MENU_TEXT_BOX * hms + 24 * u;
+#ifndef TMC_3DS
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2, iy0, SettingsPageTitle(page), hms, u);
+#endif
     int backPage = SettingsBackPage(page);
     bool showBack = page != SS_SETTINGS_ROOT;
 #ifdef TMC_3DS
@@ -3684,9 +3685,10 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
                 PaintDungeon(&s, snap, &tl, x0, y0, x1, y1, u, 1, tick, returnCfg);
             else if (!snap->hasWorldMap)
                 ClearUnavailableWorldMap();
-            else if (regionState == SS_REGION_VIEW && PaintRegion(&s, snap, &tl, x0, y0, x1, y1, u, tick, regionId))
+            else if (regionState == SS_REGION_VIEW && PaintRegion(&s, snap, &tl, x0, y0, x1, y1, u, tick, regionId)) {
                 mapName = MapNameForText(Port_SecondScreenWorldMap_GetRegionNameText(regionId));
-            else {
+                DrawBackButton(&s, &tl, 234, 150, 54, 24, SS_ACT_MAPVIEW, 0, u, ts);
+            } else {
                 if (regionState == SS_REGION_VIEW) Port_SecondScreen_3DS_ExitRegion();
                 PaintOverworld(&s, snap, &tl, x0, y0, x1, y1, u, tick, wholeMap, followCfg, crestCfg, tick);
             }
@@ -4113,18 +4115,16 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         }
         case SS_ACT_MAPVIEW:
-            /* The map's own back step: out of the region view first, then
-             * out of the whole map back to the follow cam. */
-            UI_LOCK();
-            if (sUi.regionState != SS_REGION_OFF) {
-                sUi.regionState = SS_REGION_OFF;
 #ifdef TMC_3DS
-                sUi.regionViewport.ready = false;
-#endif
-            } else {
+            Port_SecondScreen_3DS_BackFromRegion();
+#else
+            UI_LOCK();
+            if (sUi.regionState != SS_REGION_OFF)
+                sUi.regionState = SS_REGION_OFF;
+            else
                 sUi.wholeMap = 0;
-            }
             UI_UNLOCK();
+#endif
             break;
         case SS_ACT_MAPZOOM:
             /* Step the zoom: Link's close view <-> the whole of Hyrule. */
