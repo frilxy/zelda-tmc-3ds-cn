@@ -2065,8 +2065,13 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 #ifdef TMC_3DS
             const bool techniques = questView == SS_QUEST_TECHNIQUES;
             if (techniques) PaintTechniqueSelection(s, snap, tl, px, py);
-            /* The ROM title plaque ends at x=171 in its 240px canvas. */
-            DrawMapChipAt(s, "返回", rx1 - 65, ry0 + 4, u, chip);
+            const float centerY = ry0 + 16;
+            chip[0] = rx1 - 54;
+            chip[1] = centerY - 8;
+            chip[2] = rx1 - 12;
+            chip[3] = centerY + 8;
+            DrawLabelPlate(s, chip[0], chip[1], chip[2], chip[3], SS_PLATE_TITLE);
+            MenuTextCentered(s, "返回", (chip[0] + chip[2]) / 2, centerY, 1, SS_TEXT_PLATE_INK);
 #else
             DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
 #endif
