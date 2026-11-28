@@ -1,5 +1,13 @@
 # 更新日志（中文版）
 
+## v2.2.15
+
+- 正式版加入实时下屏「地图」与「物品与收集」两页。START 或点页签切换，游戏继续运行。
+- 触摸选中道具会显示 ROM 原名，按 A／B／X／Y 绑定。右上角显示四键装备，X／Y 绑定随存档保存。
+- 地图显示实时生命、卢比和地牢钥匙。点选区域后可拖动地图，按 B 返回总览。区域名和建筑名显示在底部。
+- 幸福碎片和剑技采用原版石板与道具图案。剑技显示原版卷轴、头像和说明，两个详情页的返回按钮在石板右上角。
+- 更新页和更新日志在下屏显示，上屏保留游戏画面。移除实时下屏改版后废弃的暂停和上屏更新绘制路径。
+
 ## v2.2.14
 
 - 剑技详情恢复原版卷轴、师傅头像、招式说明和印章。
@@ -134,7 +142,8 @@
 
 ## Changelog
 
-- Restore original technique scrolls.
-- Move detail Back to the top right.
+- Live map and inventory without pause.
 - Bind items with physical A/B/X/Y.
-- Center HUD and show location names.
+- Drag regional maps; B returns.
+- Original item names and scrolls.
+- Update notes stay on the lower screen.

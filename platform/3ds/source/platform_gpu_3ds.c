@@ -3,9 +3,7 @@
 #include "top_view_3ds.h"
 #include "port_ppu_gpu_3ds.h"
 #include "ppu_gpu_3ds_budget.h"
-#include "port_second_screen_3ds.h"
 #include "port_widescreen.h"
-#include "port_pause_3ds.h"
 #include "fade_gpu_3ds.h"
 #include "scene_pictures_3ds.h"
 #include "stereo_3ds.h"
@@ -58,12 +56,7 @@ static uint32_t* sTopUpload;
 static uint32_t* sBottomUploads[2];
 static void* sC2dFlushBase;
 static size_t sC2dFlushSize;
-static C3D_Tex sUpdateTexture;
-static uint32_t* sUpdatePixels;
-static bool sUpdateReady;
 /* The updater can replace the LCD output without modifying the held game targets. */
-static C3D_RenderTarget* sPauseUpdateTargets[2];
-static bool sPauseUpdateLinked;
 static bool sFrameActive;
 
 /* Inside a frame C3D_SyncDisplayTransfer splits the command list with flags 0, and GSP then runs the PPU's
@@ -1347,96 +1340,6 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
     }
 }
 
-/* The changelog always occupies the physical top screen at 400x240,
- * independent of the gameplay aspect/filter settings. */
-static void RestorePauseTop(void) {
-    if (!sPauseUpdateLinked) return;
-    C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, sTopOutputFlags);
-    if (sStereoLinked)
-        C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, sTopOutputFlags);
-    sPauseUpdateLinked = false;
-    if (Port_Pause3DS_Active()) {
-        C3D_FrameDrawOn(sTopTarget);
-        if (sStereoLinked) C3D_FrameDrawOn(sTopRightTarget);
-    }
-}
-
-static bool PreparePauseUpdateTargets(void) {
-    const unsigned eyes = sStereoLinked ? 2u : 1u;
-    for (unsigned eye = 0; eye < eyes; ++eye) {
-        if (!sPauseUpdateTargets[eye])
-            sPauseUpdateTargets[eye] = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
-        if (!sPauseUpdateTargets[eye]) return false;
-    }
-    if (!sPauseUpdateLinked) {
-        C3D_RenderTargetSetOutput(sPauseUpdateTargets[0], GFX_TOP, GFX_LEFT, sTopOutputFlags);
-        if (sStereoLinked)
-            C3D_RenderTargetSetOutput(sPauseUpdateTargets[1], GFX_TOP, GFX_RIGHT, sTopOutputFlags);
-        sPauseUpdateLinked = true;
-    }
-    return true;
-}
-
-static void DrawUpdateTop(void) {
-    if (!Port_SecondScreen_3DS_UpdateOpen()) {
-        RestorePauseTop();
-        return;
-    }
-    const bool paused = Port_Pause3DS_Active();
-    /* GX display transfer is not a padded row copy: its output dimensions
-     * describe the transfer extent. Match the 512x256 texture on both sides;
-     * a 400x240 input produces corrupt tiled rows on hardware. Only the
-     * 400x240 viewport is painted and sampled. */
-    const size_t uploadBytes = TOP_TEXTURE_WIDTH * TOP_TEXTURE_HEIGHT * sizeof(uint32_t);
-    if (!sUpdateReady) {
-        sUpdatePixels = linearAlloc(uploadBytes);
-        if (!sUpdatePixels)
-            return;
-        if (!C3D_TexInit(&sUpdateTexture, TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT, GPU_RGBA8)) {
-            linearFree(sUpdatePixels);
-            sUpdatePixels = NULL;
-            return;
-        }
-        C3D_TexSetFilter(&sUpdateTexture, GPU_NEAREST, GPU_NEAREST);
-        C3D_TexSetWrap(&sUpdateTexture, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-        memset(sUpdatePixels, 0, uploadBytes);
-        sUpdateReady = true;
-    }
-    if (Port_SecondScreen_3DS_PaintUpdateTop(sUpdatePixels, TOP_TEXTURE_WIDTH)) {
-        Platform3DS_CleanDataCache(sUpdatePixels, uploadBytes);
-        SplitFlushed();
-        C3D_SyncDisplayTransfer(sUpdatePixels, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
-                                sUpdateTexture.data, GX_BUFFER_DIM(TOP_TEXTURE_WIDTH, TOP_TEXTURE_HEIGHT),
-                                TextureTransfer());
-    }
-    C2D_Prepare();
-    C3D_SetScissor(GPU_SCISSOR_DISABLE, 0, 0, 0, 0);
-    Tex3DS_SubTexture sub = { .width = 400,
-                              .height = 240,
-                              .left = 0,
-                              .top = 1,
-                              .right = 400.f / TOP_TEXTURE_WIDTH,
-                              .bottom = 1 - 240.f / TOP_TEXTURE_HEIGHT };
-    C2D_Image image = { .tex = &sUpdateTexture, .subtex = &sub };
-    if (paused && !PreparePauseUpdateTargets()) return;
-    C3D_RenderTarget* targets[] = {
-        paused ? sPauseUpdateTargets[0] : sTopTarget,
-        sStereoLinked ? (paused ? sPauseUpdateTargets[1] : sTopRightTarget) : NULL,
-    };
-    ConfigureAbgrTextureEnv();
-    for (unsigned eye = 0; eye < 2; ++eye) {
-        if (!targets[eye]) continue;
-        C2D_TargetClear(targets[eye], C2D_Color32(0, 0, 0, 255));
-        C2D_SceneBegin(targets[eye]);
-        C2D_DrawImageAt(image, 0, 0, 0, NULL, 1, 1);
-        C2D_Flush();
-    }
-    ConfigureAbgrTextureEnv();
-    PlatformGpu3DS_InvalidateTopBorder();
-}
-
-
-
 /* The numbers box (SHOW FPS), after ../mzm and ../sm-3ds: four small lines in a dim box at the
  * bottom-left corner, averaged over the last second. The first is the game's own rate (green from
  * 59, yellow from 50, red below); L is the logic's ms per tick, G the GPU's ms per presented
@@ -1872,17 +1775,6 @@ void PlatformGpu3DS_BeginTop(const uint32_t* pixels, unsigned width, unsigned he
     ++sStats.topTransfers;
 }
 
-bool PlatformGpu3DS_BeginBottomOnly(void) {
-    if (!sReady) return false;
-    if (sFrameActive) return true;
-    if (!C3D_FrameBegin(0)) {
-        ++sStats.frameBeginFailures;
-        return false;
-    }
-    sFrameActive = true;
-    return true;
-}
-
 bool PlatformGpu3DS_BeginCustomTop(void) {
     if (!sReady) return false;
     if (sFrameActive) return true;
@@ -1966,7 +1858,6 @@ bool PlatformGpu3DS_QueueRgba5551Readback(void* texturePointer, uint16_t* pixels
 
 bool PlatformGpu3DS_EndBottom(const uint32_t* pixels, bool changed) {
     if (!sFrameActive || !pixels) return false;
-    DrawUpdateTop();
     if (changed) {
         /* NOT a blocking transfer. citro3d source/renderqueue.c:417-430 shows
          * C3D_SyncDisplayTransfer only blocks when called OUTSIDE a frame:
@@ -2143,10 +2034,6 @@ bool PlatformGpu3DS_RunWithTimeout(void (*fn)(void), unsigned milliseconds) {
 }
 
 void PlatformGpu3DS_Shutdown(void) {
-    if (sUpdateReady) C3D_TexDelete(&sUpdateTexture);
-    if (sUpdatePixels) linearFree(sUpdatePixels);
-    sUpdateReady = false;
-    sUpdatePixels = NULL;
     if (!sReady) return;
     if (sFrameActive) {
         C2D_Flush();
@@ -2154,11 +2041,6 @@ void PlatformGpu3DS_Shutdown(void) {
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
     }
     if (!aptShouldClose()) C3D_FrameSync();
-    for (unsigned i = 0; i < 2; ++i) {
-        if (sPauseUpdateTargets[i]) C3D_RenderTargetDelete(sPauseUpdateTargets[i]);
-        sPauseUpdateTargets[i] = NULL;
-    }
-    sPauseUpdateLinked = false;
     TopBlurShutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);

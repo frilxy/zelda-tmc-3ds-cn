@@ -26,7 +26,7 @@ int main(int argc,char** argv) {
     extern void Port_LoadRom(const char*);
     Port_LoadRom(argv[1]);
     assert(Port_SecondScreenTheme_Ready());
-    static uint32_t bottom[320*240],top[400*240], paddedTop[512*256];
+    static uint32_t bottom[320*240], paddedBottom[512*256];
     SSurf s={bottom,320,240,320}; TargetList targets={0}; SecondScreenSnapshot snap={0};
     Port_SecondScreenTheme_DrawBackdrop(bottom,320,240,320,0,0,320,240,2);
     PaintSettingsSlab(&s, &snap, &targets, 1.f / 3, 2, SS_SETTINGS_ROOT, 0, 0, 0, 0);
@@ -55,18 +55,31 @@ int main(int argc,char** argv) {
             assert(a.x1<=b.x0 || b.x1<=a.x0 || a.y1<=b.y0 || b.y1<=a.y0);
         }
         char file[50];snprintf(file,sizeof(file),"update-%d.raw",mode);Capture(file,bottom,320,240,320);
-        assert(Port_SecondScreen_3DS_PaintUpdateTop(top,400));
-        snprintf(file,sizeof(file),"top-%d.raw",mode);Capture(file,top,400,240,400);
-        /* Exercise the real GPU upload pitch, not just tightly packed preview
-         * pixels. Every visible row must match and padding must stay intact. */
-        for (unsigned i=0;i<512*256;i++) paddedTop[i]=0x13579bdf;
-        ++testStatus.revision;
-        assert(Port_SecondScreen_3DS_PaintUpdateTop(paddedTop,512));
-        for (unsigned y=0;y<256;y++) for (unsigned x=0;x<512;x++) {
-            if (y<240 && x<400) assert(paddedTop[y*512+x]==top[y*400+x]);
-            else assert(paddedTop[y*512+x]==0x13579bdf);
+        for (unsigned i = 0; i < 512 * 256; ++i) paddedBottom[i] = 0x13579bdf;
+        SSurf padded = {paddedBottom, 320, 240, 512};
+        TargetList paddedTargets = {0};
+        PaintSettingsSlab(&padded, &snap, &paddedTargets, 1.f / 3, 2, SS_SETTINGS_UPDATE, 0, 0, 0, 0);
+        for (unsigned y = 0; y < 256; ++y)
+            for (unsigned x = 0; x < 512; ++x) {
+                if (x >= 320 || y >= 240) assert(paddedBottom[y * 512 + x] == 0x13579bdf);
+            }
+        if (mode == 1) {
+            assert(sUpdatePages > 1 && sUpdatePage == 0);
+            bool next = false;
+            for (int i = 0; i < targets.n; ++i) {
+                next |= targets.t[i].action == SS_ACT_UPDATE_NEXT;
+                assert(targets.t[i].action != SS_ACT_UPDATE_ACTION);
+            }
+            assert(next && HandleUpdateTap(SS_ACT_UPDATE_NEXT, 0) && sUpdatePage == 1);
+            targets.n = 0;
+            PaintSettingsSlab(&s, &snap, &targets, 1.f / 3, 2, SS_SETTINGS_UPDATE, 0, 0, 0, 0);
+            bool prev = false;
+            for (int i = 0; i < targets.n; ++i)
+                prev |= targets.t[i].action == SS_ACT_UPDATE_PREV;
+            assert(prev);
+            Capture("update-notes-2.raw", bottom, 320, 240, 320);
+            assert(HandleUpdateTap(SS_ACT_SETTINGS_BACK, 0) && !sUpdateNotes);
         }
-        assert(!Port_SecondScreen_3DS_PaintUpdateTop(paddedTop,512));
     }
     testStatus.state=UPDATE_AVAILABLE;UpdateUI_Reset();
     assert(HandleUpdateTap(SS_ACT_UPDATE_ACTION,0)&&downloads==0&&sUpdateConfirm);

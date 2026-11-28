@@ -21,14 +21,6 @@ void Port_SecondScreen_3DS_DrawCombinedCollection(uint32_t* pixels, int stride, 
     Port_SecondScreenQuest_DrawCompact3DS(pixels, stride, snap);
 }
 
-int Port_SecondScreen_3DS_CombinedCollectionTap(int x, int y) {
-    for (int id = 0; id < PORT_QUEST_COMPACT_COUNT; ++id) {
-        const SecondScreenQuestRect r = Port_SecondScreenQuest_Compact3DSRect(id);
-        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return id;
-    }
-    return -1;
-}
-
 bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* width, int* height) {
     const SecondScreenQuestRect r = Port_SecondScreenQuest_Compact3DSRect(id);
     if (!r.w) return false;
@@ -116,41 +108,29 @@ bool Port_SecondScreen_3DS_BeginRegionDrag(int x, int y) {
            Port_SecondScreen_3DS_DragRegion(x, y, 0, 0);
 }
 
-void Port_SecondScreen_3DS_OpenPauseSettings(bool updates) {
-    const int mode = updates ? SS_PAUSE_SETTINGS_UPDATE : SS_PAUSE_SETTINGS_ROOT;
+void Port_SecondScreen_3DS_OpenSettings(void) {
     UI_LOCK();
-    if (sUi.pauseSettingsMode == mode) {
-        UI_UNLOCK();
-        return;
-    }
-    RequestTouchRefresh();
-    sTapTargetCount = 0;
-    sUi.resumeTab = sUi.tab;
-    sUi.pauseSettingsMode = mode;
-    sUi.tab = SS_TAB_SETTINGS;
-    sUi.settingsPage = updates ? SS_SETTINGS_UPDATE : SS_SETTINGS_ROOT;
-    sUi.armedRing = 0;
-    sUi.loadConfirmActive = 0;
-    sUi.randoConfirmActive = 0;
-    UI_UNLOCK();
-    if (updates)
-        BeginUpdatePage();
-}
-
-bool Port_SecondScreen_3DS_PauseSettingsOpen(void) {
-    UI_LOCK();
-    const bool open = sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE;
-    UI_UNLOCK();
-    return open;
-}
-
-void Port_SecondScreen_3DS_ClosePauseSettings(void) {
-    UI_LOCK();
-    const bool idleOpen = __atomic_exchange_n(&sIdleSettingsOpen, 0, __ATOMIC_ACQ_REL) != 0;
-    if (sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE || idleOpen) {
+    if (!sUi.liveSettingsOpen) {
         RequestTouchRefresh();
         sTapTargetCount = 0;
-        sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
+        sUi.resumeTab = sUi.tab;
+        sUi.liveSettingsOpen = true;
+        sUi.tab = SS_TAB_SETTINGS;
+        sUi.settingsPage = SS_SETTINGS_ROOT;
+        sUi.armedRing = 0;
+        sUi.loadConfirmActive = 0;
+        sUi.randoConfirmActive = 0;
+    }
+    UI_UNLOCK();
+}
+
+void Port_SecondScreen_3DS_CloseSettings(void) {
+    UI_LOCK();
+    const bool idleOpen = __atomic_exchange_n(&sIdleSettingsOpen, 0, __ATOMIC_ACQ_REL) != 0;
+    if (sUi.liveSettingsOpen || idleOpen) {
+        RequestTouchRefresh();
+        sTapTargetCount = 0;
+        sUi.liveSettingsOpen = false;
         sUi.tab = idleOpen ? SS_TAB_MAP : sUi.resumeTab;
         sUi.settingsPage = SS_SETTINGS_ROOT;
         sUi.loadConfirmActive = 0;
@@ -170,7 +150,7 @@ static void ResetIdleOnlyState(void) {
     sUi.playerFloorDisp = SS_NO_FLOOR;
     sUi.regionState = SS_REGION_OFF;
     sUi.questView = SS_QUEST_MAIN;
-    if (sUi.pauseSettingsMode == SS_PAUSE_SETTINGS_NONE) {
+    if (!sUi.liveSettingsOpen) {
         sUi.settingsPage = SS_SETTINGS_ROOT;
         sUi.loadConfirmActive = 0;
         sUi.randoConfirmActive = 0;
@@ -213,7 +193,7 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     if (!settingsOpen) {
         UI_LOCK();
         sUi.tab = SS_TAB_MAP;
-        sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
+        sUi.liveSettingsOpen = false;
         UI_UNLOCK();
         /* Preserve every reset the shared non-game cinema path performed:
          * stale map fixes, armed items and submenu state must not cross a
@@ -231,7 +211,7 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     SecondScreenSnapshot settingsSnapshot = *snap;
     settingsSnapshot.inGame = 1;
     UI_LOCK();
-    if (sUi.pauseSettingsMode == SS_PAUSE_SETTINGS_NONE) {
+    if (!sUi.liveSettingsOpen) {
         sUi.tab = SS_TAB_SETTINGS;
         sIdleOwnsSettingsTab = 1;
     }

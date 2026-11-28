@@ -61,6 +61,74 @@ static void UpdateButton(const SSurf* s, TargetList* tl, float x0, float y0, flo
         AddTarget(tl, x0, y0, x1, y1, action, 0);
 }
 
+/* Cache formatted notes on the bottom-screen paint thread. The formatter
+ * strips markup and non-ASCII text and wraps to 42 columns. Wrap again to
+ * the actual pixel width so wide letters stay inside the panel. */
+static void PaintUpdateNotes(const SSurf* s, TargetList* tl, const UpdateStatus* st, float x0, float y0, float x1,
+                             float y1, float u, int ts) {
+    enum { MAX_LINES = 512, LINE_HEIGHT = 17, NAV_HEIGHT = 24 };
+    static char lines[MAX_LINES][43];
+    static unsigned count, revision = UINT32_MAX;
+    static int cachedWidth;
+    const int textWidth = (int)(x1 - x0) - 12;
+    if (count == 0 || revision != st->revision || cachedWidth != textWidth) {
+        static char body[12289], formatted[MAX_LINES][43];
+        Updater_GetNotes(body, sizeof(body));
+        const unsigned rows = Update_FormatNotes(body, formatted, MAX_LINES);
+        count = 0;
+        for (unsigned i = 0; i < rows && count < MAX_LINES; ++i) {
+            const char* text = formatted[i];
+            do {
+                char part[43];
+                const size_t length = strlen(text);
+                size_t take = length;
+                memcpy(part, text, take + 1);
+                while (take > 1 && UpdateTextWidth(part) > textWidth) part[--take] = 0;
+                if (take < length) {
+                    const char* space = strrchr(part, ' ');
+                    if (space && space != part) take = (size_t)(space - part);
+                }
+                part[take] = 0;
+                memcpy(lines[count++], part, take + 1);
+                text += take;
+                while (*text == ' ') ++text;
+            } while (*text && count < MAX_LINES);
+        }
+        revision = st->revision;
+        cachedWidth = textWidth;
+    }
+
+    const int cx = (int)((x0 + x1) / 2);
+    const int wellTop = (int)y0 + 19;
+    const int navTop = (int)y1 - NAV_HEIGHT;
+    const int textTop = wellTop + 4;
+    const int available = navTop - 4 - textTop;
+    if (available < LINE_HEIGHT) return;
+    const unsigned perPage = (unsigned)(available / LINE_HEIGHT);
+    const unsigned pages = count ? (count + perPage - 1) / perPage : 1;
+    UI_LOCK();
+    sUpdatePages = pages;
+    if (sUpdatePage >= pages) sUpdatePage = pages - 1;
+    const unsigned page = sUpdatePage;
+    UI_UNLOCK();
+
+    char title[64];
+    snprintf(title, sizeof(title), "更新日志 %s", st->version);
+    UpdateCenteredText(s, title, cx, (int)y0);
+    Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, (int)x0, wellTop, (int)(x1 - x0),
+                                   navTop - 3 - wellTop, 1);
+    const unsigned start = page * perPage;
+    for (unsigned i = start; i < count && i < start + perPage; ++i)
+        UpdateSmallText(s, lines[i], (int)x0 + 6, textTop + (int)(i - start) * LINE_HEIGHT, SS_TEXT_INK);
+    if (page > 0)
+        UpdateButton(s, tl, x0, navTop, x0 + 68, y1, "上一页", SS_ACT_UPDATE_PREV, false, u, ts);
+    if (page + 1 < pages)
+        UpdateButton(s, tl, x1 - 68, navTop, x1, y1, "下一页", SS_ACT_UPDATE_NEXT, false, u, ts);
+    char footer[32];
+    snprintf(footer, sizeof(footer), "第 %u / %u 页", page + 1, pages);
+    UpdateCenteredText(s, footer, cx, navTop + (NAV_HEIGHT - 16) / 2);
+}
+
 static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0, float x1, float y1, float u, int ts) {
     UpdateStatus st;
     Updater_GetStatus(&st);
@@ -69,13 +137,18 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
     confirm = sUpdateConfirm;
     notes = sUpdateNotes;
     UI_UNLOCK();
+    const bool busy = Updater_Busy();
+    if (notes && !confirm && !busy && st.version[0]) {
+        PaintUpdateNotes(s, tl, &st, x0, y0, x1, y1, u, ts);
+        return;
+    }
     float row = 26, gap = 4;
     int cx = (int)((x0 + x1) / 2);
     char text[96];
     snprintf(text, sizeof(text), "通道：%s", st.prerelease ? "预发布" : "稳定版");
     UpdateButton(s, tl, x0, y0, x1, y0 + row, text, SS_ACT_UPDATE_CHANNEL, false, u, ts);
     UpdateButton(s, tl, x0, y0 + row + gap, x1, y0 + 2 * row + gap, st.version[0] ? st.version : "未选择版本",
-                 SS_ACT_UPDATE_RELEASE, notes, u, ts);
+                 SS_ACT_UPDATE_RELEASE, false, u, ts);
     const char* message = confirm ? "下载并安装" : st.message;
     if (!message[0])
         message = "检查更新";
@@ -95,25 +168,20 @@ static void PaintUpdatePanel(const SSurf* s, TargetList* tl, float x0, float y0,
     UpdateCenteredText(s, first, cx, (int)(y0 + 60));
     if (second[0])
         UpdateCenteredText(s, second, cx, (int)(y0 + 75));
-    else
-        UpdateCenteredText(s,
-                           confirm ? "未保存的进度会丢失"
-                           : notes ? "更新日志见上屏"
-                                   : "点选版本查看日志",
-                           cx, (int)(y0 + 78));
-    if (notes && !confirm && !Updater_Busy()) {
-        UpdateButton(s, tl, x0, y0 + 99, x0 + 68, y0 + 120, "上一页", SS_ACT_UPDATE_PREV, false, u, ts);
-        UpdateButton(s, tl, x1 - 68, y0 + 99, x1, y0 + 120, "下一页", SS_ACT_UPDATE_NEXT, false, u, ts);
-    }
+    else if (confirm || st.version[0])
+        UpdateCenteredText(s, confirm ? "未保存的进度会丢失" : "点选版本查看日志", cx, (int)(y0 + 78));
     if (st.state == UPDATE_DOWNLOADING || st.state == UPDATE_VERIFYING || st.state == UPDATE_INSTALLING) {
         FillRect(s, (int)x0, (int)(y0 + 103), (int)x1, (int)(y0 + 111),
                  Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK));
         FillRect(s, (int)x0, (int)(y0 + 103), (int)(x0 + (x1 - x0) * st.progress / 100), (int)(y0 + 111),
                  Port_SecondScreenTheme_Color(SSC_RUPEE_GREEN));
+    } else if (!confirm) {
+        snprintf(text, sizeof(text), "已安装：v%s", TMC_PORT_VERSION);
+        UpdateCenteredText(s, text, cx, (int)(y0 + 103));
     }
     const char* action = confirm                         ? "安装更新"
                          : st.state == UPDATE_INSTALLING ? "请稍候"
-                         : Updater_Busy()                ? "取消"
+                         : busy                          ? "取消"
                          : st.state == UPDATE_AVAILABLE  ? "下载更新"
                          : st.state == UPDATE_DONE       ? "更新已安装"
                                                          : "检查更新";
@@ -130,14 +198,15 @@ static bool HandleUpdateTap(int action, int arg) {
     bool busy = Updater_Busy();
     if (action == SS_ACT_SETTINGS_BACK) {
         UI_LOCK();
-        bool confirm = sUpdateConfirm;
-        sUpdateConfirm = false;
+        const bool internalPage = sUpdateConfirm || sUpdateNotes;
+        sUpdateConfirm = sUpdateNotes = false;
+        sUpdatePage = 0;
         UI_UNLOCK();
-        if (confirm)
+        if (internalPage && !busy)
             return true;
         Updater_Cancel();
         if (busy)
-            return true; // Wait for the worker before resuming the game.
+            return true; // Wait for the worker before closing the update page.
         UpdateUI_Reset();
         return false;
     }
@@ -178,6 +247,7 @@ static bool HandleUpdateTap(int action, int arg) {
                 UI_LOCK();
                 sUpdateNotes = true;
                 sUpdatePage = 0;
+                sUpdatePages = 1;
                 UI_UNLOCK();
             }
             break;
@@ -196,97 +266,5 @@ static bool HandleUpdateTap(int action, int arg) {
         default:
             return true;
     }
-    return true;
-}
-
-/* Main-thread top painter. Theme caches have been initialized before either
- * screen worker starts; the top view reads only their immutable art. */
-bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride) {
-    if (!Port_SecondScreen_3DS_UpdateOpen())
-        return false;
-    UpdateStatus st;
-    Updater_GetStatus(&st);
-    bool notes;
-    unsigned page;
-    UI_LOCK();
-    notes = sUpdateNotes;
-    page = sUpdatePage;
-    UI_UNLOCK();
-    static unsigned paintedRevision = UINT32_MAX, paintedPage = UINT32_MAX;
-    static bool paintedNotes;
-    if (paintedRevision == st.revision && paintedPage == page && paintedNotes == notes)
-        return false;
-    paintedRevision = st.revision;
-    paintedPage = page;
-    paintedNotes = notes;
-    static char lines[512][43];
-    static unsigned count, revision = UINT32_MAX;
-    static bool lastNotes;
-    if (revision != st.revision || notes != lastNotes) {
-        static char body[12289], formatted[512][43];
-        if (notes && st.version[0])
-            Updater_GetNotes(body, sizeof(body));
-        else
-            snprintf(body, sizeof(body),
-                     "已安装：v%s\n\n%s\n\n选择下方版本可查看更新日志。\n选择稳定版或预发布版以检查该通道。",
-                     TMC_PORT_VERSION, st.message);
-        unsigned n = Update_FormatNotes(body, formatted, 512);
-        count = 0;
-        for (unsigned i = 0; i < n && count < 512; i++) {
-            const char* text = formatted[i];
-            do {
-                size_t take = strlen(text);
-                char part[43];
-                snprintf(part, sizeof(part), "%s", text);
-                while (take && UpdateTextWidth(part) > 354)
-                    part[--take] = 0;
-                if (take < strlen(text)) {
-                    char* space = strrchr(part, ' ');
-                    if (space && space != part) {
-                        take = space - part;
-                        part[take] = 0;
-                    }
-                }
-                if (!take && *text) {
-                    take = 1;
-                    part[0] = *text;
-                    part[1] = 0;
-                }
-                snprintf(lines[count++], 43, "%s", part);
-                text += take;
-                while (*text == ' ')
-                    ++text;
-            } while (*text && count < 512);
-        }
-        revision = st.revision;
-        lastNotes = notes;
-    }
-    unsigned pages = (count + 8) / 9;
-    if (!pages)
-        pages = 1;
-    if (page >= pages)
-        page = pages - 1;
-    UI_LOCK();
-    sUpdatePages = pages;
-    sUpdatePage = page;
-    UI_UNLOCK();
-    SSurf s = { pixels, 400, 240, stride };
-    Port_SecondScreenTheme_DrawBackdrop(pixels, 400, 240, stride, 0, 0, 400, 240, 2);
-    Port_SecondScreenTheme_DrawPlate(pixels, 400, 240, stride, 4, 4, 392, 232, 2);
-    char title[80];
-    snprintf(title, sizeof(title), notes ? "更新日志 %s" : "更新", st.version);
-    UpdateUpperAscii(title);
-    DrawPanelHeaderChip(&s, 200, 14, title, 1, 1.0f / 3);
-    Port_SecondScreenTheme_DrawWell(pixels, 400, 240, stride, 17, 47, 366, 165, 1);
-    for (unsigned i = page * 9; i < count && i < (page + 1) * 9; i++)
-        UpdateSmallText(&s, lines[i], 23, 49 + (i - page * 9) * 18, SS_TEXT_INK);
-    char footer[64];
-    snprintf(footer, sizeof(footer), "第 %u / %u 页", page + 1, pages);
-    const int footerW = UpdateTextWidth(footer) + 24;
-    const int footerY = 211, footerH = 24;
-    DrawMenuButton(&s, 200 - footerW / 2, footerY, 200 + (footerW + 1) / 2, footerY + footerH, "", 0, 0, 1.f / 3, 1);
-    // The Settings banner font has visible ink on rows 2..14. Center that
-    // thirteen-pixel band, rather than the full sixteen-pixel glyph cell.
-    UpdateSmallText(&s, footer, 200 - UpdateTextWidth(footer) / 2, footerY + (footerH - 13) / 2 - 2, SS_TEXT_NAVY);
     return true;
 }

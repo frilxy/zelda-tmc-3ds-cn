@@ -185,7 +185,6 @@ enum {
 };
 
 #ifdef TMC_3DS
-enum { SS_PAUSE_SETTINGS_NONE = 0, SS_PAUSE_SETTINGS_ROOT, SS_PAUSE_SETTINGS_UPDATE };
 #endif
 
 /* Settings rows, top to bottom. The second-screen-only toggles persist
@@ -280,7 +279,8 @@ static struct {
     uint8_t tab;
     uint8_t settingsPage;
 #ifdef TMC_3DS
-    uint8_t pauseSettingsMode, resumeTab, liveItem, saveConfirm, saveResult;
+    bool liveSettingsOpen;
+    uint8_t resumeTab, liveItem, saveConfirm, saveResult;
 #endif
     uint8_t wholeMap;    /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;   /* 0 none, 1 = next item tap assigns A, 2 = B */
@@ -2619,11 +2619,7 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     int backPage = SettingsBackPage(page);
     bool showBack = page != SS_SETTINGS_ROOT;
 #ifdef TMC_3DS
-    UI_LOCK();
-    const int pauseMode = sUi.pauseSettingsMode;
-    UI_UNLOCK();
-    if (page == SS_SETTINGS_ROOT ||
-        (page == SS_SETTINGS_UPDATE && pauseMode == SS_PAUSE_SETTINGS_UPDATE)) {
+    if (page == SS_SETTINGS_ROOT) {
         backPage = SS_SETTINGS_CLOSE;
         showBack = true;
     }
@@ -3876,7 +3872,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             break;
         }
         case SS_ACT_LIVE_SETTINGS:
-            Port_SecondScreen_3DS_OpenPauseSettings(false);
+            Port_SecondScreen_3DS_OpenSettings();
             break;
 #endif
         case SS_ACT_SETTINGS_PAGE:
@@ -3891,7 +3887,7 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_SETTINGS_BACK:
 #ifdef TMC_3DS
             if (hit.arg == SS_SETTINGS_CLOSE) {
-                Port_SecondScreen_3DS_ClosePauseSettings();
+                Port_SecondScreen_3DS_CloseSettings();
                 break;
             }
 #endif
