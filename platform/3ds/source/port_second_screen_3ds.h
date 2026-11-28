@@ -19,6 +19,13 @@ void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
 bool Port_SecondScreen_3DS_PauseSettingsOpen(void);
 void Port_SecondScreen_3DS_ClosePauseSettings(void);
 void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title);
+typedef enum {
+    SS_PAUSE_ICON_SAVE,
+    SS_PAUSE_ICON_SETTINGS,
+    SS_PAUSE_ICON_BACK,
+} SecondScreenPauseIcon3DS;
+void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, int y, int width, int height,
+                                           SecondScreenPauseIcon3DS icon);
 void Port_SecondScreen_3DS_DrawCombinedCollection(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap);
 /* IDs: bag/heart/skills/shells (0–3), diamond left/top/right/bottom (4–7),
  * passive gear left to right (8–10), carried quest-item tray (11). */

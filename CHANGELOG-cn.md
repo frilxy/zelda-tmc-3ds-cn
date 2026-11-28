@@ -1,5 +1,12 @@
 # 更新日志（中文版）
 
+## v2.2.10
+
+- 暂停菜单在下屏合并为「物品与收集」和「状态与地图」两页，保留游戏原版素材和说明栏。
+- 物品格调整为四行三列，留出更宽的间距。收集区长槽与上方七个圆槽对齐，地图页显示心心、卢比和适用地牢的钥匙数量。
+- 底部保存、设置和返回使用青蓝色图标按钮，与顶部页签统一配色。
+- 支持触摸选物和 A／B 装备、点页签切换、打开地图与收集详情、进入设置和确认存档。也可用 ZL／ZR 翻页。
+
 ## v2.2.7
 
 - 下屏卢比略微下移，让它与上方元素和下方标签栏的间距更均衡。
@@ -100,9 +107,7 @@
 
 ## Changelog
 
-- Balance rupee counter spacing.
-- Fix entity and script crashes.
-- Fix widescreen cutscene movement.
-- Add Full View, AI scenery and stereo.
-- Optimize GPU rendering and boot UI.
-- Ship CIA builds only.
+- Two native-style lower-screen pages.
+- Widen item spacing and align the tray.
+- Add map status and footer icons.
+- Touch to equip, navigate, and save.

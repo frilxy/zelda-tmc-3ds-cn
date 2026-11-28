@@ -239,6 +239,30 @@ void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const ch
     MenuTextCenteredFace(&surface, title, 68, 19, 1, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
 }
 
+void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, int y, int width, int height,
+                                           SecondScreenPauseIcon3DS icon) {
+    static const char* const art[][9] = {
+        [SS_PAUSE_ICON_SAVE] = {
+            "#######..", "##...###.", "##...####", "#########", "#########",
+            "##.....##", "##.....##", "##.....##", "#########",
+        },
+        [SS_PAUSE_ICON_SETTINGS] = {
+            "...###...", ".#.###.#.", "#########", ".##...##.", "###...###",
+            ".##...##.", "#########", ".#.###.#.", "...###...",
+        },
+        [SS_PAUSE_ICON_BACK] = {
+            ".........", "...#.....", "..##.....", ".###.....", "#########",
+            ".###.....", "..##.....", "...#.....", ".........",
+        },
+    };
+    SSurf surface = { pixels, 320, 240, stride };
+    DrawLabelPlate(&surface, x, y, x + width, y + height, SS_PLATE_TITLE);
+    DrawPixelArt(&surface, art[icon], 9, x + (width - 18) / 2, y + (height - 18) / 2, 2,
+                 COL_PLATE_TITLE_OUTER);
+    DrawPixelArt(&surface, art[icon], 9, x + (width - 18) / 2, y + (height - 18) / 2 - 1, 2,
+                 RGB(255, 250, 255));
+}
+
 void Port_SecondScreen_3DS_ResetFrameState(void) {
     BottomFrameState3DS_Reset(&sFrameState);
 }

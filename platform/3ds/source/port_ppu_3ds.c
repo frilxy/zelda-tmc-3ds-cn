@@ -1235,9 +1235,9 @@ bool Port_PPU_3DS_HandlePauseTouch(int x, int y) {
     return true;
 }
 
-static void DrawPauseButton(uint32_t* pixels, int x, const char* label) {
-    Port_SecondScreenTheme_DrawMenuButton(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                          x, PAUSE_BUTTON_Y, PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT, label, false);
+static void DrawPauseButton(uint32_t* pixels, int x, SecondScreenPauseIcon3DS icon) {
+    Port_SecondScreen_3DS_DrawPauseButton(pixels, sBottomUploadPitch, x, PAUSE_BUTTON_Y,
+                                         PAUSE_BUTTON_WIDTH, PAUSE_BUTTON_HEIGHT, icon);
 }
 
 static void DrawPauseText(uint32_t* pixels, const char* text, int center, int middle, int style) {
@@ -1358,7 +1358,7 @@ static void PresentNativePause(void) {
     const bool navigation = Port_Pause3DS_PageNavigationAvailable();
     if (page == PORT_PAUSE3DS_MAIN_NONE) {
         CopyPausePixels(pixels, PAUSE_NATIVE_X, PAUSE_NATIVE_Y, 0, 0, GBA_NATIVE_W, GBA_H);
-        DrawPauseButton(pixels, PAUSE_SAVE_X, "返回");
+        DrawPauseButton(pixels, PAUSE_SAVE_X, SS_PAUSE_ICON_BACK);
         Port_SecondScreen_3DS_DrawPauseTitle(pixels, sBottomUploadPitch, Port_Pause3DS_PageName());
     } else {
         SecondScreenSnapshot snap;
@@ -1366,10 +1366,10 @@ static void PresentNativePause(void) {
         Port_SecondScreenTheme_DrawPlate(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
                                         12, 38, 296, 168, 1);
         Port_SecondScreen_3DS_DrawPauseTitle(pixels, sBottomUploadPitch,
-                                            page == PORT_PAUSE3DS_MAIN_MAP ? "地图" : "物品与收集");
+                                            page == PORT_PAUSE3DS_MAIN_MAP ? "状态与地图" : "物品与收集");
         BottomPauseHud3DS_DrawEquipment(pixels, sBottomUploadPitch, &snap);
-        DrawPauseButton(pixels, PAUSE_SAVE_X, "保存");
-        DrawPauseButton(pixels, PAUSE_SETTINGS_X, "设置");
+        DrawPauseButton(pixels, PAUSE_SAVE_X, SS_PAUSE_ICON_SAVE);
+        DrawPauseButton(pixels, PAUSE_SETTINGS_X, SS_PAUSE_ICON_SETTINGS);
         if (page == PORT_PAUSE3DS_MAIN_MAP) {
             CopyPausePixels(pixels, PAUSE_MAP_X, PAUSE_MAP_Y,
                             PAUSE_MAP_SOURCE_X, PAUSE_MAP_SOURCE_Y, PAUSE_MAP_WIDTH, PAUSE_MAP_HEIGHT);

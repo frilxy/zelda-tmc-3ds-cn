@@ -617,7 +617,10 @@ enum {
     COMPACT_WIDTH = 320, COMPACT_HEIGHT = 240,
     COMPACT_DIAMOND_X = 152, COMPACT_DIAMOND_Y = 71,
     COMPACT_DIAMOND_SRC_X = 123, COMPACT_DIAMOND_SRC_Y = 31,
-    COMPACT_TRAY_X = 150, COMPACT_TRAY_Y = 158,
+    COMPACT_DIAMOND_WIDTH = 81,
+    COMPACT_TRAY_WIDTH = 82,
+    COMPACT_TRAY_X = COMPACT_DIAMOND_X + (COMPACT_DIAMOND_WIDTH - COMPACT_TRAY_WIDTH) / 2,
+    COMPACT_TRAY_Y = 158,
     COMPACT_TRAY_SRC_X = 35, COMPACT_TRAY_SRC_Y = 108,
 };
 
@@ -630,7 +633,7 @@ static const SecondScreenQuestRect kCompactSummarySource[4] = {
 /* The native slot table starts at the top of the diamond. The public order
  * follows the screen from the left clockwise. */
 static const u8 kCompactDiamondSlots[] = {10, 9, 11, 12, 13, 14, 15};
-static const SecondScreenQuestRect kCompactTray = {COMPACT_TRAY_X, COMPACT_TRAY_Y, 82, 23};
+static const SecondScreenQuestRect kCompactTray = {COMPACT_TRAY_X, COMPACT_TRAY_Y, COMPACT_TRAY_WIDTH, 23};
 
 SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id) {
     if (id >= 0 && id < 4) return kCompactSummary[id];
@@ -743,9 +746,9 @@ void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const S
     if (pixels == NULL || stride < COMPACT_WIDTH || snap == NULL) return;
     const bool ready = LoadCompactQuestArt();
     if (ready) {
-        const SecondScreenQuestRect circles = {COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, 81, 79};
-        const SecondScreenQuestRect circlesSrc = {COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, 81, 79};
-        const SecondScreenQuestRect traySrc = {COMPACT_TRAY_SRC_X, COMPACT_TRAY_SRC_Y, 82, 23};
+        const SecondScreenQuestRect circles = {COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, COMPACT_DIAMOND_WIDTH, 79};
+        const SecondScreenQuestRect circlesSrc = {COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, COMPACT_DIAMOND_WIDTH, 79};
+        const SecondScreenQuestRect traySrc = {COMPACT_TRAY_SRC_X, COMPACT_TRAY_SRC_Y, COMPACT_TRAY_WIDTH, 23};
         DrawCompactQuestBg(pixels, stride, circles, circlesSrc);
         DrawCompactQuestBg(pixels, stride, kCompactTray, traySrc);
     } else {
