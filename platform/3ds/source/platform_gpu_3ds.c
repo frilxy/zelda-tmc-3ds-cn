@@ -61,9 +61,9 @@ static size_t sC2dFlushSize;
 static C3D_Tex sUpdateTexture;
 static uint32_t* sUpdatePixels;
 static bool sUpdateReady;
-/* Save the pause background only when the updater needs the upper LCD. */
-static void* sPauseTopCopy[2];
-static unsigned sPauseTopEyes;
+/* The updater can replace the LCD output without modifying the held game targets. */
+static C3D_RenderTarget* sPauseUpdateTargets[2];
+static bool sPauseUpdateLinked;
 static bool sFrameActive;
 
 /* Inside a frame C3D_SyncDisplayTransfer splits the command list with flags 0, and GSP then runs the PPU's
@@ -1349,39 +1349,40 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
 
 /* The changelog always occupies the physical top screen at 400x240,
  * independent of the gameplay aspect/filter settings. */
-static unsigned CopyPauseTop(bool restore) {
-    C3D_RenderTarget* targets[] = { sTopTarget, sStereoLinked ? sTopRightTarget : NULL };
-    unsigned eyes = restore ? sPauseTopEyes : targets[1] ? 2u : 1u;
-    const u32 bytes = 400u * 240u * sizeof(uint32_t);
-    if (!restore) {
-        for (unsigned i = 0; i < eyes; ++i) {
-            if (!sPauseTopCopy[i]) sPauseTopCopy[i] = linearMemAlign(bytes, 0x80);
-            if (!sPauseTopCopy[i]) return 0;
-        }
+static void RestorePauseTop(void) {
+    if (!sPauseUpdateLinked) return;
+    C3D_RenderTargetSetOutput(sTopTarget, GFX_TOP, GFX_LEFT, sTopOutputFlags);
+    if (sStereoLinked)
+        C3D_RenderTargetSetOutput(sTopRightTarget, GFX_TOP, GFX_RIGHT, sTopOutputFlags);
+    sPauseUpdateLinked = false;
+    if (Port_Pause3DS_Active()) {
+        C3D_FrameDrawOn(sTopTarget);
+        if (sStereoLinked) C3D_FrameDrawOn(sTopRightTarget);
     }
-    C2D_Flush();
-    SplitFlushed();
-    for (unsigned i = 0; i < eyes; ++i) {
-        C3D_RenderTarget* target = targets[i];
-        if (!target) continue;
-        void* color = target->frameBuf.colorBuf;
-        if (restore) C3D_FrameDrawOn(target);
-        /* Copy the raw target layout in both directions. The GX queue keeps
-         * the copy ordered with drawing and the final LCD transfer. */
-        C3D_SyncTextureCopy(restore ? sPauseTopCopy[i] : color, 0,
-                           restore ? color : sPauseTopCopy[i], 0, bytes, 0);
+}
+
+static bool PreparePauseUpdateTargets(void) {
+    const unsigned eyes = sStereoLinked ? 2u : 1u;
+    for (unsigned eye = 0; eye < eyes; ++eye) {
+        if (!sPauseUpdateTargets[eye])
+            sPauseUpdateTargets[eye] = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH16);
+        if (!sPauseUpdateTargets[eye]) return false;
     }
-    return eyes;
+    if (!sPauseUpdateLinked) {
+        C3D_RenderTargetSetOutput(sPauseUpdateTargets[0], GFX_TOP, GFX_LEFT, sTopOutputFlags);
+        if (sStereoLinked)
+            C3D_RenderTargetSetOutput(sPauseUpdateTargets[1], GFX_TOP, GFX_RIGHT, sTopOutputFlags);
+        sPauseUpdateLinked = true;
+    }
+    return true;
 }
 
 static void DrawUpdateTop(void) {
     if (!Port_SecondScreen_3DS_UpdateOpen()) {
-        if (sPauseTopEyes && Port_Pause3DS_Active()) CopyPauseTop(true);
-        sPauseTopEyes = 0;
+        RestorePauseTop();
         return;
     }
-    if (Port_Pause3DS_Active() && !sPauseTopEyes)
-        sPauseTopEyes = CopyPauseTop(false);
+    const bool paused = Port_Pause3DS_Active();
     /* GX display transfer is not a padded row copy: its output dimensions
      * describe the transfer extent. Match the 512x256 texture on both sides;
      * a 400x240 input produces corrupt tiled rows on hardware. Only the
@@ -1417,7 +1418,11 @@ static void DrawUpdateTop(void) {
                               .right = 400.f / TOP_TEXTURE_WIDTH,
                               .bottom = 1 - 240.f / TOP_TEXTURE_HEIGHT };
     C2D_Image image = { .tex = &sUpdateTexture, .subtex = &sub };
-    C3D_RenderTarget* targets[] = { sTopTarget, sStereoLinked ? sTopRightTarget : NULL };
+    if (paused && !PreparePauseUpdateTargets()) return;
+    C3D_RenderTarget* targets[] = {
+        paused ? sPauseUpdateTargets[0] : sTopTarget,
+        sStereoLinked ? (paused ? sPauseUpdateTargets[1] : sTopRightTarget) : NULL,
+    };
     ConfigureAbgrTextureEnv();
     for (unsigned eye = 0; eye < 2; ++eye) {
         if (!targets[eye]) continue;
@@ -2150,10 +2155,10 @@ void PlatformGpu3DS_Shutdown(void) {
     }
     if (!aptShouldClose()) C3D_FrameSync();
     for (unsigned i = 0; i < 2; ++i) {
-        if (sPauseTopCopy[i]) linearFree(sPauseTopCopy[i]);
-        sPauseTopCopy[i] = NULL;
+        if (sPauseUpdateTargets[i]) C3D_RenderTargetDelete(sPauseUpdateTargets[i]);
+        sPauseUpdateTargets[i] = NULL;
     }
-    sPauseTopEyes = 0;
+    sPauseUpdateLinked = false;
     TopBlurShutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
