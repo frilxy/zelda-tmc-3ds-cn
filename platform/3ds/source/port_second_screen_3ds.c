@@ -41,7 +41,6 @@ bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* w
 
 static volatile uint8_t sIdleSettingsOpen;
 static uint8_t sIdleOwnsSettingsTab;
-static volatile uint8_t sIdleBackVisible;
 static BottomFrameState3DS sFrameState;
 
 static uint32_t BeginRefresh(void) {
@@ -92,7 +91,8 @@ bool Port_SecondScreen_3DS_PauseSettingsOpen(void) {
 
 void Port_SecondScreen_3DS_ClosePauseSettings(void) {
     UI_LOCK();
-    if (sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE) {
+    const bool idleOpen = __atomic_exchange_n(&sIdleSettingsOpen, 0, __ATOMIC_ACQ_REL) != 0;
+    if (sUi.pauseSettingsMode != SS_PAUSE_SETTINGS_NONE || idleOpen) {
         RequestTouchRefresh();
         sTapTargetCount = 0;
         sUi.pauseSettingsMode = SS_PAUSE_SETTINGS_NONE;
@@ -102,33 +102,6 @@ void Port_SecondScreen_3DS_ClosePauseSettings(void) {
         sUi.randoConfirmActive = 0;
     }
     UI_UNLOCK();
-}
-
-static void IdleBackRect(int width, int height, float* x0, float* y0, float* x1, float* y1) {
-    float u = (float)(width < height ? width : height) / 720.0f;
-    int32_t ts = (width < height ? width : height) / 240;
-    if (ts < 2) ts = 2;
-    if (ts > 6) ts = 6;
-
-    const float panelX = 10.0f * u;
-    const float panelY = 10.0f * u;
-    const float inset = 6.0f * (float)ts;
-    int32_t headerScale = (int32_t)(2.4f * u);
-    if (headerScale < 1) headerScale = 1;
-    const float headerHeight = MENU_TEXT_BOX * headerScale + 24.0f * u;
-    float buttonWidth = 154.0f * u;
-    if (buttonWidth < 54.0f) buttonWidth = 54.0f;
-
-    *x0 = panelX + inset + 4.0f * u;
-    *y0 = panelY + inset;
-    *x1 = *x0 + buttonWidth;
-    *y1 = *y0 + headerHeight;
-}
-
-static bool IsIdleBackTap(int x, int y, int width, int height) {
-    float x0, y0, x1, y1;
-    IdleBackRect(width, height, &x0, &y0, &x1, &y1);
-    return (float)x >= x0 && (float)x < x1 && (float)y >= y0 && (float)y < y1;
 }
 
 static void ResetIdleOnlyState(void) {
@@ -151,13 +124,6 @@ static void ResetIdleOnlyState(void) {
     UI_UNLOCK();
     sLastFix.valid = 0;
     sCam.valid = 0;
-    __atomic_store_n(&sIdleBackVisible, 0, __ATOMIC_RELEASE);
-}
-
-static void DrawIdleBack(const SSurf* surface, float u, int32_t ts) {
-    float x0, y0, x1, y1;
-    IdleBackRect(surface->w, surface->h, &x0, &y0, &x1, &y1);
-    DrawMenuButton(surface, x0, y0, x1, y1, "返回", 0, 0, u, ts);
 }
 
 static void PaintIntroCinema(uint32_t* pixels, int width, int height, int stride) {
@@ -212,22 +178,6 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     UI_UNLOCK();
     Port_SecondScreen_PaintInto(pixels, width, height, strideInPixels, &settingsSnapshot, tick);
 
-    int settingsPage;
-    int confirmationOpen;
-    UI_LOCK();
-    settingsPage = sUi.settingsPage;
-    confirmationOpen = sUi.randoConfirmActive;
-    UI_UNLOCK();
-    const bool showIdleBack = settingsPage == SS_SETTINGS_ROOT && !confirmationOpen;
-    if (showIdleBack) {
-        SSurf surface = { pixels, width, height, strideInPixels };
-        float u = (float)(width < height ? width : height) / 720.0f;
-        int32_t ts = (width < height ? width : height) / 240;
-        if (ts < 2) ts = 2;
-        if (ts > 6) ts = 6;
-        DrawIdleBack(&surface, u, ts);
-    }
-    __atomic_store_n(&sIdleBackVisible, showIdleBack ? 1 : 0, __ATOMIC_RELEASE);
     FinishRefresh(refreshRequest);
     return refreshRequest;
 }
@@ -241,26 +191,30 @@ void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const ch
 
 void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, int y, int width, int height,
                                            SecondScreenPauseIcon3DS icon) {
-    static const char* const art[][9] = {
+    enum { ICON_SIZE = 13 };
+    static const char* const art[][ICON_SIZE] = {
         [SS_PAUSE_ICON_SAVE] = {
-            "#######..", "##...###.", "##...####", "#########", "#########",
-            "##.....##", "##.....##", "##.....##", "#########",
+            "#########....", "##########...", "##.....####..", "##....######.", "##.....######",
+            "#############", "#############", "###.......###", "###.......###", "###.......###",
+            "###.......###", "#############", "#############",
         },
         [SS_PAUSE_ICON_SETTINGS] = {
-            "...###...", ".#.###.#.", "#########", ".##...##.", "###...###",
-            ".##...##.", "#########", ".#.###.#.", "...###...",
+            ".....###.....", "..#..###..#..", ".###.###.###.", "..#########..", "...###.###...",
+            "#####...#####", "####.....####", "#####...#####", "...###.###...", "..#########..",
+            ".###.###.###.", "..#..###..#..", ".....###.....",
         },
         [SS_PAUSE_ICON_BACK] = {
-            ".........", "...#.....", "..##.....", ".###.....", "#########",
-            ".###.....", "..##.....", "...#.....", ".........",
+            ".............", ".....#.......", "....##.......", "...###.......", "..###........",
+            ".############", "#############", ".############", "..###........", "...###.......",
+            "....##.......", ".....#.......", ".............",
         },
     };
     SSurf surface = { pixels, 320, 240, stride };
     DrawLabelPlate(&surface, x, y, x + width, y + height, SS_PLATE_TITLE);
-    DrawPixelArt(&surface, art[icon], 9, x + (width - 18) / 2, y + (height - 18) / 2, 2,
-                 COL_PLATE_TITLE_OUTER);
-    DrawPixelArt(&surface, art[icon], 9, x + (width - 18) / 2, y + (height - 18) / 2 - 1, 2,
-                 RGB(255, 250, 255));
+    const int iconX = x + (width - ICON_SIZE) / 2;
+    const int iconY = y + (height - ICON_SIZE) / 2;
+    DrawPixelArt(&surface, art[icon], ICON_SIZE, iconX, iconY + 1, 1, COL_PLATE_TITLE_OUTER);
+    DrawPixelArt(&surface, art[icon], ICON_SIZE, iconX, iconY, 1, RGB(255, 250, 255));
 }
 
 void Port_SecondScreen_3DS_ResetFrameState(void) {
@@ -308,13 +262,6 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
 
     if (!__atomic_load_n(&sIdleSettingsOpen, __ATOMIC_ACQUIRE)) {
         __atomic_store_n(&sIdleSettingsOpen, 1, __ATOMIC_RELEASE);
-        RequestTouchRefresh();
-        return;
-    }
-
-    if (__atomic_load_n(&sIdleBackVisible, __ATOMIC_ACQUIRE) &&
-        IsIdleBackTap(x, y, 320, 240)) {
-        __atomic_store_n(&sIdleSettingsOpen, 0, __ATOMIC_RELEASE);
         RequestTouchRefresh();
         return;
     }

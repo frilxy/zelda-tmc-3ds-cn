@@ -2459,7 +2459,7 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
     UI_LOCK();
     const int pauseMode = sUi.pauseSettingsMode;
     UI_UNLOCK();
-    if ((page == SS_SETTINGS_ROOT && pauseMode != SS_PAUSE_SETTINGS_NONE) ||
+    if (page == SS_SETTINGS_ROOT ||
         (page == SS_SETTINGS_UPDATE && pauseMode == SS_PAUSE_SETTINGS_UPDATE)) {
         backPage = SS_SETTINGS_CLOSE;
         showBack = true;
@@ -2536,6 +2536,8 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
 
     uint8_t rows[SS_SET_COUNT];
     int nRows = SettingsPageRows(page, rows);
+    if (nRows <= 0)
+        return;
     float gap = 7 * u;
     float rowH = (iy1 - y0 - (nRows - 1) * gap) / nRows;
     if (rowH > 76 * u)
@@ -2545,6 +2547,29 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         DrawSettingsValueRow(s, tl, x0, ry, x1, ry + rowH, rows[slot], u, ts);
     }
 }
+
+#ifdef TMC_3DS
+enum { SETTINGS_SLAB_MARGIN = 2 };
+
+static void PaintSettingsSlab(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float u, int32_t ts,
+                              int page, uint32_t tick, uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil,
+                              int loadStateResult) {
+    const int margin = SETTINGS_SLAB_MARGIN;
+    const SSurf slab = {
+        s->px + margin * s->stride + margin, s->w - 2 * margin, s->h - 2 * margin, s->stride,
+    };
+    if (slab.w <= 0 || slab.h <= 0) return;
+    const int first = tl->n;
+    PaintSettingsPanel(&slab, snap, tl, 0, 0, slab.w, slab.h, u, ts, page, tick, dumpFlashUntil,
+                       loadStateFlashUntil, loadStateResult);
+    for (int i = first; i < tl->n; ++i) {
+        tl->t[i].x0 += margin;
+        tl->t[i].x1 += margin;
+        tl->t[i].y0 += margin;
+        tl->t[i].y1 += margin;
+    }
+}
+#endif
 
 typedef struct LoadStateConfirmationLayout {
     float x0;
@@ -2564,10 +2589,20 @@ typedef struct LoadStateConfirmationLayout {
 
 static LoadStateConfirmationLayout ComputeLoadStateConfirmationLayout(int32_t width, int32_t height, float u) {
     LoadStateConfirmationLayout layout;
+#ifdef TMC_3DS
+    /* Settings and its confirmations own the whole lower LCD. Keep a narrow
+     * two-pixel rim so every row and button remains inside one ROM-backed slab. */
+    (void)u;
+    layout.x0 = SETTINGS_SLAB_MARGIN;
+    layout.x1 = width - SETTINGS_SLAB_MARGIN;
+    layout.y0 = SETTINGS_SLAB_MARGIN;
+    layout.y1 = height - SETTINGS_SLAB_MARGIN;
+#else
     layout.x0 = 18 * u;
     layout.x1 = width - 18 * u;
     layout.y0 = 18 * u;
     layout.y1 = height - 18 * u;
+#endif
 
     /* The 3DS canvas is 320x240 (u=1/3). Keep this confirmation on an
      * explicit pixel rhythm: the old y0+10 title landed against the top
@@ -3401,8 +3436,13 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     } else if (tab == SS_TAB_QUEST) {
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
     } else if (tab == SS_TAB_SETTINGS) {
+#ifdef TMC_3DS
+        PaintSettingsSlab(&s, snap, &tl, u, ts, settingsPage, tick, dumpFlashUntil, loadStateFlashUntil,
+                          loadStateResult);
+#else
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick, dumpFlashUntil,
                            loadStateFlashUntil, loadStateResult);
+#endif
     } else if (isDungeon) {
         PaintDungeon(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, returnCfg);
 #ifdef TMC_3DS

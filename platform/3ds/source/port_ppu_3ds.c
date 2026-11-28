@@ -1247,15 +1247,6 @@ static void DrawPauseText(uint32_t* pixels, const char* text, int center, int mi
                                       center - width / 2, y, 1, style, text);
 }
 
-static void DrawPauseLine(uint32_t* pixels, int x) {
-    const uint32_t shadow = Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK);
-    const uint32_t light = Port_SecondScreenTheme_Color(SSC_MENU_WHITE);
-    for (int row = 53; row < 193; ++row) {
-        pixels[row * sBottomUploadPitch + x] = shadow;
-        pixels[row * sBottomUploadPitch + x + 1] = light;
-    }
-}
-
 static void DrawCombinedItems(uint32_t* pixels, const SecondScreenSnapshot* snap, int collection) {
     const unsigned selected = Port_Pause3DS_SelectedItemSlot();
     Port_SecondScreenTheme_DrawWell(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
@@ -1373,14 +1364,12 @@ static void PresentNativePause(void) {
         if (page == PORT_PAUSE3DS_MAIN_MAP) {
             CopyPausePixels(pixels, PAUSE_MAP_X, PAUSE_MAP_Y,
                             PAUSE_MAP_SOURCE_X, PAUSE_MAP_SOURCE_Y, PAUSE_MAP_WIDTH, PAUSE_MAP_HEIGHT);
-            DrawPauseLine(pixels, 232);
             BottomPauseHud3DS_DrawStatus(pixels, sBottomUploadPitch, &snap);
             DrawPauseDescription(pixels);
         } else {
             const int collection = Port_Pause3DS_SelectedCollection();
             DrawPauseText(pixels, "物品", 77, 55, SS_TEXT_INK);
             DrawPauseText(pixels, "收集", 216, 55, SS_TEXT_INK);
-            DrawPauseLine(pixels, 144);
             DrawCombinedItems(pixels, &snap, collection);
             Port_SecondScreen_3DS_DrawCombinedCollection(pixels, sBottomUploadPitch, &snap);
             if (collection >= 0) {
