@@ -1,5 +1,10 @@
 # 更新日志（中文版）
 
+## v2.2.12
+
+- X／Y 改用与原版 A／B 完全一致的圆形按键底图、配色和阴影。
+- 修复下屏定期重绘时偶发漏掉触摸点按的问题。
+
 ## v2.2.11
 
 - 下屏默认显示地图。START 只切换物品与收集页，游戏继续运行，ZL／ZR 停止翻页。
@@ -115,7 +120,5 @@
 
 ## Changelog
 
-- Switch screens without pausing.
-- Pan large region maps with touch.
-- Show all 20 hearts and fix titles.
-- Assign and use items with X and Y.
+- Match X/Y badges to native A/B.
+- Preserve taps during screen redraws.

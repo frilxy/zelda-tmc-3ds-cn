@@ -1473,7 +1473,8 @@ static void PresentFrame(void) {
         ++sBottomTick;
     }
     bool forcedUpdate = !sBottomReady || Port_SecondScreen_3DS_NeedsRefresh();
-    if (!sBottomWorkerPending && (forcedUpdate || cadenceDue || sBottomSnapshotValid)) {
+    if (!sBottomWorkerPending && !Port_SecondScreen_3DS_HasDeferredTap() &&
+        (forcedUpdate || cadenceDue || sBottomSnapshotValid)) {
         SecondScreenSnapshot nextSnapshot;
         Port_SecondScreenState_Read(&nextSnapshot);
         const bool considered = forcedUpdate || cadenceDue;

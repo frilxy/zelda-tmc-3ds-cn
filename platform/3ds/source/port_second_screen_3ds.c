@@ -42,6 +42,9 @@ bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* w
 static volatile uint8_t sIdleSettingsOpen;
 static uint8_t sIdleOwnsSettingsTab;
 static BottomFrameState3DS sFrameState;
+static struct { int x, y, longPress, frames; } sDeferredTap;
+
+bool Port_SecondScreen_3DS_HasDeferredTap(void) { return sDeferredTap.frames != 0; }
 
 static uint32_t BeginRefresh(void) {
     return BottomFrameState3DS_BeginPaint(&sFrameState);
@@ -59,6 +62,7 @@ static uint32_t RequestRefresh(void) {
 }
 
 static uint32_t RequestTouchRefresh(void) {
+    sDeferredTap.frames = 0;
     return BottomFrameState3DS_RequestTouchRefresh(&sFrameState);
 }
 
@@ -251,6 +255,7 @@ void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, 
 
 void Port_SecondScreen_3DS_ResetFrameState(void) {
     BottomFrameState3DS_Reset(&sFrameState);
+    sDeferredTap.frames = 0;
 }
 
 uint32_t Port_SecondScreen_3DS_RequestRefresh(void) {
@@ -263,6 +268,16 @@ void Port_SecondScreen_3DS_MarkSubmitted(uint32_t generation, int inGame) {
 
 void Port_SecondScreen_3DS_PromoteSubmitted(void) {
     BottomFrameState3DS_PromoteSubmitted(&sFrameState);
+    if (sDeferredTap.frames == 0) return;
+    const bool inGame = Port_SecondScreen_3DS_InGame();
+    if (!BottomFrameState3DS_VisibleModeMatches(&sFrameState, inGame)) {
+        sDeferredTap.frames = 0;
+    } else if (BottomFrameState3DS_CanDispatchTouch(&sFrameState, inGame)) {
+        sDeferredTap.frames = 0;
+        Port_SecondScreen_3DS_OnTap(sDeferredTap.x, sDeferredTap.y, sDeferredTap.longPress);
+    } else {
+        --sDeferredTap.frames;
+    }
 }
 
 void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out) {
@@ -283,6 +298,13 @@ void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress) {
          * transitions (and the pre-first-frame state) still need a paint. */
         if (!BottomFrameState3DS_VisibleModeMatches(&sFrameState, currentSnapshot.inGame != 0)) {
             RequestTouchRefresh();
+        } else if (!__atomic_load_n(&sFrameState.touchBlocked, __ATOMIC_ACQUIRE)) {
+            /* A periodic repaint may finish just before a touch releases.
+             * Let it become visible before routing the tap to its hitboxes. */
+            sDeferredTap.x = x;
+            sDeferredTap.y = y;
+            sDeferredTap.longPress = longPress;
+            sDeferredTap.frames = 8;
         }
         return;
     }
@@ -352,8 +374,7 @@ int Port_SecondScreen_3DS_NeedsPeriodicRefresh(const SecondScreenSnapshot* snap,
         return 0;
     }
     if (tab == SS_TAB_ITEMS) {
-        /* The authentic item cursor blinks even when no values change. */
-        return 1;
+        return 0; /* The live inventory cursor is static. */
     }
     if (tab != SS_TAB_SETTINGS) {
         /* Quest status and its two detail lists have no selection cursor. */

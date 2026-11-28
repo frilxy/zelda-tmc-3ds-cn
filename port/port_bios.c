@@ -769,6 +769,7 @@ void VBlankIntrWait(void) {
     }
     const u16 keyinput = Platform3DS_ReadKeyInput();
     Port_SoftSlots_UpdateXy(gMain.task == TASK_GAME && gMain.state == GAMETASK_MAIN &&
+                                gPlayerState.controlMode == CONTROL_ENABLED && gPlayerState.playerInput.playerMacro == NULL &&
                                 (gMain.substate == GAMEMAIN_UPDATE || gMain.substate == GAMEMAIN_BARRELUPDATE),
                             (keyinput & B_BUTTON) == 0);
     gba_write16(REG_ADDR_KEYINPUT, keyinput);

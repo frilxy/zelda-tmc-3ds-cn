@@ -1,5 +1,7 @@
 #include "bottom_pause_hud_3ds.h"
 
+#include <stdbool.h>
+
 #include "item_ids.h"
 #include "port_second_screen_render.h"
 #include "port_second_screen_theme.h"
@@ -84,14 +86,25 @@ static void DrawEquipmentSlot(uint32_t* pixels, int stride, int left, int right,
     const int width = right - left;
     const int height = BOTTOM_PAUSE_HUD_EQUIPMENT_Y1 - BOTTOM_PAUSE_HUD_EQUIPMENT_Y0;
     uint32_t* slot = pixels + BOTTOM_PAUSE_HUD_EQUIPMENT_Y0 * stride + left;
-    if (badge >= 0) {
-        DrawSprite(slot, stride, width, height, 1, 4, badge);
-    } else {
-        const char* label = badge == -1 ? "X" : "Y";
-        Port_SecondScreenTheme_DrawMenuButton(slot, width, height, stride, 0, 4, 16, 15, "", 0);
-        const int textW = Port_SecondScreenTheme_BigTextWidth(label, 1);
-        Port_SecondScreenTheme_DrawBigText(slot, width, height, stride, (16 - textW) / 2,
-            Port_SecondScreenTheme_InkTopForCenter(11, 1, SS_FACE_BODY), 1, SS_TEXT_NAVY, label);
+    const bool extra = badge < 0;
+    const int stamp = extra ? SST_BUTTON_A : badge;
+    DrawSprite(slot, stride, width, height, 1, 4, stamp);
+    if (extra) {
+        /* The native A badge has a four-by-five glyph over a flat fill.
+         * Keep its original outline and bevel and reuse both glyph colors. */
+        static const uint8_t glyphs[2][5] = {
+            {0x9, 0x9, 0x6, 0x9, 0x9}, /* X */
+            {0x9, 0x9, 0x6, 0x4, 0x4}, /* Y */
+        };
+        const SecondScreenThemeSprite* native = Port_SecondScreenTheme_Get(stamp);
+        if (native && native->w > 10 && native->h > 10) {
+            const uint32_t fill = native->px[7 * native->w + 6];
+            const uint32_t ink = native->px[6 * native->w + 8];
+            const uint8_t* glyph = glyphs[badge == -1 ? 0 : 1];
+            for (int y = 0; y < 5; ++y)
+                for (int x = 0; x < 4; ++x)
+                    slot[(10 + y) * stride + 8 + x] = glyph[y] & (8 >> x) ? ink : fill;
+        }
     }
 
     if (item >= ITEM_BOTTLE1 && item <= ITEM_BOTTLE4) {
