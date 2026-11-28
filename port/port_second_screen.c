@@ -3051,11 +3051,7 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     DrawRPrompt(s, snap, x, promptBands.promptY, w, promptBands.promptHeight, u, ts);
     vitalsBottom = promptBands.contentBottom;
 
-    /* Bare counters sit above the tab bar without another stone tray, on ONE
-     * row: the small key left of the rupee in a dungeon. Scale is computed
-     * with the key group present on every map, so the rupee is the same size
-     * indoors and out, and the block never grows a second row -- the equip
-     * rings above it keep the space they have above ground. */
+    /* Size the counters together so the rupee is the same size indoors and out. */
     int32_t ik = 2 * k;           /* icon scale (16x16 art) */
     int32_t ck = k + (k + 1) / 2; /* digit scale (8x16 HUD font) */
     float chipPad = 2 * u;
@@ -3089,6 +3085,10 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
                           snap->dungeonKeys, 2, 0);
             ry += rowH + 6 * u;
         }
+#ifdef TMC_3DS
+        /* Give the rupee row more space above it while keeping room for the tabs. */
+        ry += 16 * u;
+#endif
         {
             float groupW = 16 * ik + groupGap + numberW;
             float ixl = x + (w - groupW) / 2;

@@ -1,5 +1,13 @@
 # 更新日志（中文版）
 
+## v2.2.7
+
+- 下屏卢比略微下移，让它与上方元素和下方标签栏的间距更均衡。
+- 修复丘丘特效指针、林克醒来时的睡眠气泡清理，以及空脚本上下文导致的潜在崩溃。
+- 修复宽屏剧情里角色突然消失或跳到下一处的问题。
+- 正式版加入 400×240 Full View、宽屏+AI、裸眼 3D、GPU 渲染优化及新版加载动画。
+- 「完美像素」改称「点对点」。原「拉伸」设置自动迁移为普通宽屏。3DS 安装包统一为 CIA。
+
 ## v2.2.6
 
 - 「显示方式」中的「完美像素」改译为「点对点」。
@@ -92,6 +100,9 @@
 
 ## Changelog
 
-- Rename the Pixel Perfect display label.
-- Add optional AI widescreen scenery.
-- Replace legacy Stretch with Wide.
+- Balance rupee counter spacing.
+- Fix entity and script crashes.
+- Fix widescreen cutscene movement.
+- Add Full View, AI scenery and stereo.
+- Optimize GPU rendering and boot UI.
+- Ship CIA builds only.
