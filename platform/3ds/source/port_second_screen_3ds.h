@@ -18,6 +18,7 @@ bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride);
 void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
 bool Port_SecondScreen_3DS_PauseSettingsOpen(void);
 void Port_SecondScreen_3DS_ClosePauseSettings(void);
+void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title);
 
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick);

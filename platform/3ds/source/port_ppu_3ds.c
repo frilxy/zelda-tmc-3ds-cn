@@ -1152,8 +1152,8 @@ enum {
     PAUSE_NATIVE_X = (PAUSE_BOTTOM_WIDTH - GBA_NATIVE_W) / 2,
     PAUSE_NATIVE_Y = (PAUSE_BOTTOM_HEIGHT - GBA_H) / 2,
     PAUSE_PAGE_BUTTON_WIDTH = 38,
-    PAUSE_PAGE_BUTTON_Y = 60,
-    PAUSE_PAGE_BUTTON_HEIGHT = 56,
+    PAUSE_PAGE_BUTTON_Y = 81,
+    PAUSE_PAGE_BUTTON_HEIGHT = 48,
     PAUSE_ACTION_X = 74,
     PAUSE_ACTION_Y = 207,
     PAUSE_ACTION_WIDTH = 78,
@@ -1248,15 +1248,9 @@ static void PresentNativePause(void) {
         memcpy(pixels + (y + PAUSE_NATIVE_Y) * sBottomUploadPitch + PAUSE_NATIVE_X,
                sTopUpload + y * sTopUploadPitch, GBA_NATIVE_W * sizeof(*pixels));
 
-    const char* title = Port_Pause3DS_PageName();
     const bool navigation = Port_Pause3DS_PageNavigationAvailable();
     const bool quest = Port_Pause3DS_QuestPage();
-    Port_SecondScreenTheme_DrawChip(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                    PAUSE_NATIVE_X, 8, 112, 23, 1, SS_CHIP_RED);
-    Port_SecondScreenTheme_DrawTitleText(pixels, PAUSE_BOTTOM_WIDTH, PAUSE_BOTTOM_HEIGHT, sBottomUploadPitch,
-                                         PAUSE_NATIVE_X + 10,
-                                         Port_SecondScreenTheme_InkTopForCenter(19, 1, SS_FACE_LARGE),
-                                         1, SS_TEXT_WHITE, title);
+    Port_SecondScreen_3DS_DrawPauseTitle(pixels, sBottomUploadPitch, Port_Pause3DS_PageName());
     if (navigation) {
         DrawPauseButton(pixels, 4, 93, 32, 23, "ZL", false);
         DrawPauseButton(pixels, PAUSE_BOTTOM_WIDTH - 36, 93, 32, 23, "ZR", false);

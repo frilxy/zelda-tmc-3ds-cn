@@ -210,6 +210,14 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
     return refreshRequest;
 }
 
+void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title) {
+    if (!title || !*title) return;
+    SSurf surface = { pixels, 320, 240, stride };
+    const int textWidth = Port_SecondScreenTheme_TitleTextWidth(title, 1);
+    DrawPanelHeaderChip(&surface, 40.0f + (float)textWidth / 2 + 34.0f / 3,
+                       6.0f, title, 1, 1.0f / 3);
+}
+
 void Port_SecondScreen_3DS_ResetFrameState(void) {
     BottomFrameState3DS_Reset(&sFrameState);
 }

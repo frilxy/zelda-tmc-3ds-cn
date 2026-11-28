@@ -5,6 +5,7 @@
 #include "ppu_gpu_3ds_budget.h"
 #include "port_second_screen_3ds.h"
 #include "port_widescreen.h"
+#include "port_pause_3ds.h"
 #include "fade_gpu_3ds.h"
 #include "scene_pictures_3ds.h"
 #include "stereo_3ds.h"
@@ -60,6 +61,9 @@ static size_t sC2dFlushSize;
 static C3D_Tex sUpdateTexture;
 static uint32_t* sUpdatePixels;
 static bool sUpdateReady;
+/* Save the pause background only when the updater needs the upper LCD. */
+static void* sPauseTopCopy[2];
+static unsigned sPauseTopEyes;
 static bool sFrameActive;
 
 /* Inside a frame C3D_SyncDisplayTransfer splits the command list with flags 0, and GSP then runs the PPU's
@@ -1345,9 +1349,39 @@ static void DrawScenePictures(int frameX, int frameY, int frameW, int frameH, bo
 
 /* The changelog always occupies the physical top screen at 400x240,
  * independent of the gameplay aspect/filter settings. */
+static unsigned CopyPauseTop(bool restore) {
+    C3D_RenderTarget* targets[] = { sTopTarget, sStereoLinked ? sTopRightTarget : NULL };
+    unsigned eyes = restore ? sPauseTopEyes : targets[1] ? 2u : 1u;
+    const u32 bytes = 400u * 240u * sizeof(uint32_t);
+    if (!restore) {
+        for (unsigned i = 0; i < eyes; ++i) {
+            if (!sPauseTopCopy[i]) sPauseTopCopy[i] = linearMemAlign(bytes, 0x80);
+            if (!sPauseTopCopy[i]) return 0;
+        }
+    }
+    C2D_Flush();
+    SplitFlushed();
+    for (unsigned i = 0; i < eyes; ++i) {
+        C3D_RenderTarget* target = targets[i];
+        if (!target) continue;
+        void* color = target->frameBuf.colorBuf;
+        if (restore) C3D_FrameDrawOn(target);
+        /* Copy the raw target layout in both directions. The GX queue keeps
+         * the copy ordered with drawing and the final LCD transfer. */
+        C3D_SyncTextureCopy(restore ? sPauseTopCopy[i] : color, 0,
+                           restore ? color : sPauseTopCopy[i], 0, bytes, 0);
+    }
+    return eyes;
+}
+
 static void DrawUpdateTop(void) {
-    if (!Port_SecondScreen_3DS_UpdateOpen())
+    if (!Port_SecondScreen_3DS_UpdateOpen()) {
+        if (sPauseTopEyes && Port_Pause3DS_Active()) CopyPauseTop(true);
+        sPauseTopEyes = 0;
         return;
+    }
+    if (Port_Pause3DS_Active() && !sPauseTopEyes)
+        sPauseTopEyes = CopyPauseTop(false);
     /* GX display transfer is not a padded row copy: its output dimensions
      * describe the transfer extent. Match the 512x256 texture on both sides;
      * a 400x240 input produces corrupt tiled rows on hardware. Only the
@@ -2115,6 +2149,11 @@ void PlatformGpu3DS_Shutdown(void) {
         C3D_FrameEnd(GX_CMDLIST_FLUSH);
     }
     if (!aptShouldClose()) C3D_FrameSync();
+    for (unsigned i = 0; i < 2; ++i) {
+        if (sPauseTopCopy[i]) linearFree(sPauseTopCopy[i]);
+        sPauseTopCopy[i] = NULL;
+    }
+    sPauseTopEyes = 0;
     TopBlurShutdown();
     C3D_RenderTargetDelete(sBottomTarget);
     C3D_RenderTargetDelete(sTopTarget);
