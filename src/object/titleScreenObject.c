@@ -6,6 +6,9 @@
  */
 #include "object.h"
 #include "asm.h"
+#ifdef PC_PORT
+#include "port_widescreen.h"
+#endif
 
 void TitleScreenObject_Type0(Entity*);
 void TitleScreenObject_Type1(Entity*);
@@ -30,6 +33,17 @@ void TitleScreenObject(Entity* this) {
         TitleScreenObject_Type1, TitleScreenObject_Type4,
     };
     TitleScreenObject_Types[this->type](this);
+#ifdef PC_PORT
+    /* The 400x240 title (Port_Widescreen_TitleWide) can go away or come back while the screen is
+     * up, when the player changes VIEW or STYLE: the position set once by sub_080A2340 would stay
+     * shifted by the view it was made for. It follows the live answer every frame instead. */
+    if (this->action != 0) {
+        const struct_08125014* ptr = &gUnk_08125014[this->type];
+        const int wide = Port_Widescreen_TitleWide();
+        this->x.HALF.HI = ptr->unk_0 + (wide ? 80 : 0);
+        this->y.HALF.HI = ptr->unk_2 + (wide ? 40 : 0);
+    }
+#endif
 }
 
 void TitleScreenObject_Type0(Entity* this) {
@@ -101,6 +115,13 @@ void sub_080A2340(Entity* this) {
     ptr = &gUnk_08125014[this->type];
     this->x.HALF.HI = ptr->unk_0;
     this->y.HALF.HI = ptr->unk_2;
+#ifdef PC_PORT
+    /* Drawn in screen coordinates: in the 400x240 title (src/title.c) the GBA's screen is in the middle. */
+    if (Port_Widescreen_TitleWide()) {
+        this->x.HALF.HI += 80;
+        this->y.HALF.HI += 40;
+    }
+#endif
     this->frameIndex = ptr->unk_4;
     this->spritePriority.b0 = ptr->unk_6;
     this->spriteRendering.b3 = 1;

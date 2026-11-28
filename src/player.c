@@ -298,10 +298,6 @@ extern u16 script_BedAtSimons;
 
 extern ScriptExecutionContext gPlayerScriptExecutionContext;
 
-#ifdef PC_PORT
-static Entity* gSleepBubbleEntity = NULL;
-#endif
-
 bool32 CheckInitPauseMenu(void) {
     u32 framestate;
     if (((gInput.newKeys & START_BUTTON) == 0 || gFadeControl.active || gPauseMenuOptions.disabled ||
@@ -4131,9 +4127,14 @@ void sub_08074F2C(PlayerEntity* this) {
 void sub_08074F44(PlayerEntity* this) {
     this->unk_68.BYTES.byte0++;
 #ifdef PC_PORT
-    if (gSleepBubbleEntity) {
-        DeleteEntity(gSleepBubbleEntity);
-        gSleepBubbleEntity = NULL;
+    /* Room changes and checkpoint loads can reuse entity slots. Find the
+     * player's live sleep bubbles in the pool before removing them. */
+    for (u32 i = 0; i < MAX_ENTITIES; i++) {
+        Entity* bubble = (Entity*)&gEntities[i];
+        if (bubble->next != NULL && bubble->kind == OBJECT && bubble->id == THOUGHT_BUBBLE &&
+            bubble->type2 == 2 && bubble->parent == &gPlayerEntity.base) {
+            DeleteEntity(bubble);
+        }
     }
 #else
     {
@@ -4304,9 +4305,7 @@ void sub_080751E8(u32 a1, u32 a2, void* script) {
         StartCutscene(e, script);
     }
     e2 = CreateSpeechBubbleSleep(&gPlayerEntity.base, -14, -28);
-#ifdef PC_PORT
-    gSleepBubbleEntity = e2;
-#else
+#ifndef PC_PORT
     *(Entity**)&gPlayerEntity.unk_6c = e2;
 #endif
     if (e2 != NULL) {

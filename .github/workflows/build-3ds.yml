@@ -21,7 +21,7 @@ env:
 
 jobs:
   build:
-    name: Nintendo 3DS JP packages
+    name: Nintendo 3DS JP CIA
     runs-on: ubuntu-latest
     container:
       image: devkitpro/devkitarm:latest
@@ -30,7 +30,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.inputs.tag || github.ref }}
+          ref: ${{ github.event.inputs.tag }}
 
       - name: Verify bundled build tools
         run: |
@@ -55,7 +55,7 @@ jobs:
           mkdir -p /opt/devkitpro/tools/bin/
           cp makerom/bin/makerom /opt/devkitpro/tools/bin/
 
-      - name: Build JP 3DSX and CIA
+      - name: Build JP CIA
         run: |
           export PATH="/opt/devkitpro/tools/bin:$PATH"
           ./platform/3ds/build.sh
@@ -70,20 +70,18 @@ jobs:
 
           ! git ls-files | grep -E '(^|/)(AGENTS\.md|PROTOCOL\.md|WORKFLOW\.md|GITHUB_RELEASE_WORKFLOW\.md)$'
 
-          test -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
+          test ! -f "build-3ds/game/tmc-3ds-v${VERSION}.3dsx"
           test -f "build-3ds/game/tmc-3ds-v${VERSION}.cia"
 
       - name: Verify release notes are updater-safe
         run: python3 scripts/dev/check_release_notes.py CHANGELOG-cn.md
 
-      - name: Upload JP packages
+      - name: Upload JP CIA
         uses: actions/upload-artifact@v7
         with:
           name: tmc-3ds-packages-JP
           if-no-files-found: error
-          path: |
-            build-3ds/game/tmc-3ds-v*.3dsx
-            build-3ds/game/tmc-3ds-v*.cia
+          path: build-3ds/game/tmc-3ds-v*.cia
 
   publish:
     name: Publish GitHub release
@@ -105,17 +103,16 @@ jobs:
             echo "::error::tag ${TAG} does not match platform/3ds/version.txt (v${VERSION})"
             exit 1
           fi
-          case "${VERSION}" in
-            *-E*)
-              echo "This tag is a pre-release."
-              echo "PRERELEASE=true" >> "${GITHUB_ENV}"
-              ;;
-            *)
-              echo "PRERELEASE=false" >> "${GITHUB_ENV}"
-              ;;
-          esac
+          # Numeric tags can opt into prerelease without changing the updater's version format.
+          git fetch --depth=1 origin "refs/tags/${TAG}:refs/tags/${TAG}"
+          tag_notes="$(git for-each-ref --format='%(contents:body)%0a%(contents:subject)' "refs/tags/${TAG}")"
+          if [[ "${VERSION}" == *-E* ]] || grep -Fxq 'Prerelease: true' <<< "${tag_notes}"; then
+            echo "PRERELEASE=true" >> "${GITHUB_ENV}"
+          else
+            echo "PRERELEASE=false" >> "${GITHUB_ENV}"
+          fi
 
-      - name: Download built packages
+      - name: Download built CIA
         uses: actions/download-artifact@v8
         with:
           name: tmc-3ds-packages-JP
@@ -127,36 +124,38 @@ jobs:
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
           TAG="${GITHUB_REF_NAME}"
 
-          # The in-app updater requests assets by exact filename
-          # (tmc-3ds-v<version>.cia / .3dsx) and verifies the SHA-256 digest
-          # GitHub reports, so both files must stay at the asset root.
+          # The in-app updater requests the CIA by exact filename and
+          # verifies the SHA-256 digest GitHub reports.
           test -f "dist/tmc-3ds-v${VERSION}.cia"
-          test -f "dist/tmc-3ds-v${VERSION}.3dsx"
+          (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" > SHA256SUMS.txt)
 
-          (cd dist && sha256sum "tmc-3ds-v${VERSION}.cia" "tmc-3ds-v${VERSION}.3dsx" > SHA256SUMS.txt)
+          python3 -m pip install --disable-pip-version-check --quiet --target "${RUNNER_TEMP}/qr-python" segno==1.6.6
+          PYTHONPATH="${RUNNER_TEMP}/qr-python" python3 - \
+            "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia" \
+            "dist/QR-${TAG}-github.png" <<'PYTHON'
+          import sys
+          import segno
 
-          # The QR is a convenience, never a gate: apt once hung here for
-          # 15+ minutes and blocked a release that had already compiled.
-          if command -v qrencode >/dev/null 2>&1 ||
-             { timeout 90 sudo apt-get update -qq &&
-               timeout 120 sudo apt-get install -y -qq qrencode; }; then
-            if command -v qrencode >/dev/null 2>&1; then
-              qrencode -o "dist/QR-${TAG}-github.png" -s 6 -m 2 \
-                "https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/tmc-3ds-v${VERSION}.cia"
-            else
-              echo "qrencode unavailable; skipping the QR asset"
-            fi
-          else
-            echo "package install timed out; skipping the QR asset"
-          fi
+          segno.make(sys.argv[1], error="m").save(sys.argv[2], scale=10, border=4)
+          PYTHON
 
       - name: Write release notes
         run: |
           set -euo pipefail
           VERSION="$(tr -d '\r\n' < platform/3ds/version.txt)"
-          # Published verbatim: the on-device changelog view starts at the
-          # file's own "## Changelog" heading, which must stay ASCII-only.
-          cp CHANGELOG-cn.md release-notes.md
+          TAG="${GITHUB_REF_NAME}"
+          {
+            printf '![在 FBI 中扫码安装](https://github.com/%s/releases/download/%s/QR-%s-github.png)\n\n' \
+              "${GITHUB_REPOSITORY}" "${TAG}" "${TAG}"
+            printf 'FBI → Remote Install → Scan QR Code\n\n'
+            awk -v heading="## ${TAG}" '
+              $0 == heading { current=1; next }
+              /^## / { current=0 }
+              /^## Changelog$/ { device=1 }
+              current || device
+            ' CHANGELOG-cn.md
+          } > release-notes.md
+          python3 scripts/dev/check_release_notes.py release-notes.md
           echo "TMCPORTVERSION=${VERSION}" >> "${GITHUB_ENV}"
 
       - name: Create release
@@ -172,6 +171,5 @@ jobs:
           gh release create "${TAG}" \
             "${ARGS[@]}" \
             "dist/tmc-3ds-v${TMCPORTVERSION}.cia" \
-            "dist/tmc-3ds-v${TMCPORTVERSION}.3dsx" \
             "dist/SHA256SUMS.txt" \
             "dist/QR-${TAG}-github.png"

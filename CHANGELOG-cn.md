@@ -1,5 +1,27 @@
 # 更新日志（中文版）
 
+## v2.2.7
+
+- 下屏卢比略微下移，让它与上方元素和下方标签栏的间距更均衡。
+- 修复丘丘特效指针、林克醒来时的睡眠气泡清理，以及空脚本上下文导致的潜在崩溃。
+- 修复宽屏剧情里角色突然消失或跳到下一处的问题。
+- 正式版加入 400×240 Full View、宽屏+AI、裸眼 3D、GPU 渲染优化及新版加载动画。
+- 「完美像素」改称「点对点」。原「拉伸」设置自动迁移为普通宽屏。3DS 安装包统一为 CIA。
+
+## v2.2.6
+
+- 「显示方式」中的「完美像素」改译为「点对点」。
+- 「宽高比」新增「宽屏+AI」。配合「点对点」可显示标题、选档、部分缩小传送和小人路径的 AI 补景。
+- 移除「拉伸」选项。已有拉伸设置会自动读取为普通宽屏。
+
+## v2.2.5
+
+- 上屏加入 400×240 Full View，宽屏与完美像素组合下可显示相连房间，并改善对话、切场和部分特效的呈现。
+- 加入由 3DS 滑杆控制的裸眼立体效果，并提供独立的「3D景深」选项。
+- 移植 GPU 绘制缓存、提前准备下一帧及 GPU 淡入淡出等渲染优化。
+- 加载页换为完整标志与旋转的金色三角力量动画。
+- 3DS 构建和发行只生成 CIA 安装包。
+
 ## v2.2.4
 
 ### 修复
@@ -78,10 +100,9 @@
 
 ## Changelog
 
-- Bottom-screen font, palette and layout
-  work.
-- Selected floor wears the same red
-  cursor brackets as the items grid.
-- White text rendered yellow: the theme
-  file had the GBA 15-bit RGB() macro.
-
+- Balance rupee counter spacing.
+- Fix entity and script crashes.
+- Fix widescreen cutscene movement.
+- Add Full View, AI scenery and stereo.
+- Optimize GPU rendering and boot UI.
+- Ship CIA builds only.

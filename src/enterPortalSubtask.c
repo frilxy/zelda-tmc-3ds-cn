@@ -21,6 +21,9 @@
 #include "subtask.h"
 #include "affine.h"
 #include "fade.h"
+#ifdef PC_PORT
+#include "port_widescreen.h"
+#endif
 
 extern void ClearArmosData(void);
 extern void sub_080300C4(void);
@@ -214,19 +217,35 @@ void Subtask_PortalCutscene_0(void) {
 void Subtask_PortalCutscene_1(void) {
     s32 tmp;
 
+#ifdef PC_PORT
+    /* Full View (Port_Widescreen_PortalCutsceneWide): the 256x320 picture centred in
+     * 400x240, the camera following Link over 240 lines instead of 160. */
+    const s32 wide = Port_Widescreen_PortalCutsceneWide();
+    const s32 halfView = wide ? 120 : 0x50;
+    const s32 lastScrollY = wide ? 320 - 240 : 0x9f;
+    gRoomControls.scroll_x = wide ? -80 : 0;
+#else
+    const s32 halfView = 0x50;
+    const s32 lastScrollY = 0x9f;
+#endif
+
     UpdateEntities();
     if (gUnk_02018EB0.unk_14 != NULL) {
-        tmp = gRoomControls.scroll_y + 0x50 - gUnk_02018EB0.unk_14->y.HALF.HI - gUnk_02018EB0.unk_14->z.HALF.HI;
+        tmp = gRoomControls.scroll_y + halfView - gUnk_02018EB0.unk_14->y.HALF.HI - gUnk_02018EB0.unk_14->z.HALF.HI;
         if (tmp != 0) {
             tmp = gRoomControls.scroll_y = gRoomControls.scroll_y - tmp;
             if (tmp * 0x10000 < 0) {
                 gRoomControls.scroll_y = 0;
             }
-            if (0x9f < gRoomControls.scroll_y) {
-                gRoomControls.scroll_y = 0x9f;
+            if (lastScrollY < gRoomControls.scroll_y) {
+                gRoomControls.scroll_y = lastScrollY;
             }
         }
     }
+#ifdef PC_PORT
+    /* Leaving Full View mid-scene (the option switched off): back inside the GBA's range. */
+    if (gRoomControls.scroll_y > lastScrollY) gRoomControls.scroll_y = lastScrollY;
+#endif
     gScreen.bg1.xOffset = gRoomControls.scroll_x;
     gScreen.bg1.yOffset = gRoomControls.scroll_y;
     FlushSprites();

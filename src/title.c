@@ -19,6 +19,7 @@
 #include "sound.h"
 #ifdef PC_PORT
 #include "../port/port_tts.h"
+#include "port_widescreen.h"
 #endif
 
 extern void FlushSprites(void);
@@ -199,11 +200,54 @@ static void HandleNintendoCapcomLogos(void) {
     }
 }
 
+#ifdef PC_PORT
+/* Full View draws the title at 400x240 (Port_Widescreen_TitleWide): the GBA's screen goes in the
+ * middle (+80, +40): the logo's entities through the camera, the PRESS START sprites by hand; the
+ * light rays continued to the view's edges (Port_Widescreen_TitleRays; else they repeat across
+ * the view from its top); the forest is drawn from the extended picture by the renderers. The
+ * sword (affine BG2) is centred through its affine origin; its map must not wrap, or it repeats
+ * beside itself past 256 pixels. It fades out after START (ExitTitlescreen) still drawn so. */
+static int TitleViewX(void) {
+    return Port_Widescreen_TitleWide() ? 80 : 0;
+}
+
+static int TitleViewY(void) {
+    return Port_Widescreen_TitleWide() ? 40 : 0;
+}
+
+static void UpdateTitleView(void) {
+    static int sWide;
+    const int wide = Port_Widescreen_TitleWide();
+    gRoomControls.scroll_x = (s16)-TitleViewX(); /* the title's entities (logo pieces) */
+    gRoomControls.scroll_y = (s16)-TitleViewY();
+    const int rays = wide ? Port_Widescreen_TitleRays() : 0;
+    if (rays) { /* the rays extended over the view: BG0 is 512x256, the original at +80,+40 */
+        gScreen.bg0.control = BGCNT_SCREENBASE(rays) | BGCNT_PRIORITY(2) | BGCNT_TXT512x256;
+        gScreen.bg0.xOffset = 0;
+    } else {
+        if (gScreen.bg0.control & BGCNT_TXT512x256) gScreen.bg0.control = BGCNT_SCREENBASE(29) | BGCNT_PRIORITY(2);
+        gScreen.bg0.xOffset = (u16)-TitleViewX();
+    }
+    gScreen.bg1.xOffset = (u16)-TitleViewX(); /* the forest's own tiles in the middle */
+    gScreen.bg1.yOffset = (u16)-TitleViewY();
+    if (wide) gScreen.bg2.control &= ~BGCNT_WRAP;
+    else if (sWide && (gScreen.bg2.control & BGCNT_256COLOR)) gScreen.bg2.control |= BGCNT_WRAP;
+    if (wide != sWide) UpdateSwordBgAffineData(); /* its origin moves with the view */
+    sWide = wide;
+}
+#else
+#define TitleViewX() 0
+#define TitleViewY() 0
+#endif
+
 static void HandleTitlescreen(void) {
     int advance;
     u32 paletteGroup;
 
     gIntroState.counter++;
+#ifdef PC_PORT
+    if (gIntroState.state != 0) UpdateTitleView();
+#endif
     switch (gIntroState.state) {
         case 0:
             gIntroState.state = 1;
@@ -296,15 +340,15 @@ static void HandleTitlescreen(void) {
             gOamCmd._4 = 0;
             gOamCmd._6 = 0;
             gOamCmd._8 = 0xE020;
-            gOamCmd.x = 120;
-            gOamCmd.y = 152;
+            gOamCmd.x = 120 + TitleViewX();
+            gOamCmd.y = 152 + TitleViewY();
             DrawDirect(510, 1);
         } else {
             UpdatePressStartIcon();
         }
             if ((gIntroState.timer & 0x20) == 0) {
                 gOamCmd._8 = 0xe000;
-                gOamCmd.y = 0x84;
+                gOamCmd.y = 0x84 + TitleViewY();
                 if (REGION_IS_EU) {
                 DrawDirect(0x1fe, 0);
                 } else {
@@ -325,8 +369,8 @@ static void UpdatePressStartIcon(void) {
     gOamCmd._4 = 0;
     gOamCmd._6 = 0;
     gOamCmd._8 = 0xE020;
-    gOamCmd.x = 120;
-    gOamCmd.y = 152;
+    gOamCmd.x = 120 + TitleViewX();
+    gOamCmd.y = 152 + TitleViewY();
     DrawDirect(511, 1);
 }
 
@@ -334,8 +378,8 @@ static void UpdateSwordBgAffineData(void) {
     struct BgAffineSrcData aff;
     aff.texY = 0x8000;
     aff.texX = 0x8000;
-    aff.scrX = DISPLAY_WIDTH / 2;
-    aff.scrY = DISPLAY_HEIGHT / 2 - 8;
+    aff.scrX = DISPLAY_WIDTH / 2 + TitleViewX();
+    aff.scrY = DISPLAY_HEIGHT / 2 - 8 + TitleViewY();
     aff.alpha = 0;
     aff.sy = aff.sx = gIntroState.swordBgScaleRatio;
     BgAffineSet(&aff, (struct BgAffineDstData*)&gScreen.controls, 1);
@@ -419,6 +463,13 @@ static void HandleTitlescreenAnimationIntro(void) {
 }
 static void ExitTitlescreen(void) {
     if (!gFadeControl.active) {
+#ifdef PC_PORT
+        /* The title fades out still drawn at 400x240 (Port_Widescreen_TitleWide); UpdateTitleView's
+         * offsets go only when it is gone. */
+        gRoomControls.scroll_x = gRoomControls.scroll_y = 0;
+        gScreen.bg0.xOffset = 0;
+        gScreen.bg1.xOffset = gScreen.bg1.yOffset = 0;
+#endif
         SetTask(TASK_FILE_SELECT);
     }
 }
