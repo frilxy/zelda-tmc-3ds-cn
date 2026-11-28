@@ -28,6 +28,7 @@
 #endif
 #ifdef TMC_3DS
 #include "port_pause_3ds.h"
+#include "port_second_screen_worldmap.h"
 #endif
 
 extern void sub_080A4DB8(u32);
@@ -39,38 +40,52 @@ void sub_080A5F48(Item, u32);
 void sub_080A57F4(void);
 
 #ifdef TMC_3DS
-extern void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
+typedef enum {
+    PAUSE_TOUCH_NONE,
+    PAUSE_TOUCH_PAGE,
+    PAUSE_TOUCH_ITEM,
+    PAUSE_TOUCH_EQUIP,
+    PAUSE_TOUCH_COLLECTION,
+    PAUSE_TOUCH_SAVE,
+    PAUSE_TOUCH_MAP,
+    PAUSE_TOUCH_NATIVE,
+    PAUSE_TOUCH_BACK,
+} PauseTouchType;
 
-enum {
-    PAUSE_QUEST_SETTINGS_SLOT = 4,
-    PAUSE_QUEST_UPDATES_SLOT = 5,
-};
-
-static int sPausePageRequest;
-static unsigned sPauseActionRequest;
+static struct PauseTouch {
+    PauseTouchType type;
+    int x;
+    int y;
+} sQueuedTouch, sFrameTouch;
+static int sSelectedCollection = -1;
+static u8 sSaveReturnPage = PauseMenuScreen_1;
 
 bool Port_Pause3DS_Active(void) {
     return gMain.task == TASK_GAME && gMain.substate == GAMEMAIN_SUBTASK && gUI.lastState == SUBTASK_PAUSEMENU;
 }
 
 bool Port_Pause3DS_MenuVisible(void) {
-    /* Variant 0 initializes the menu. Subtask_Die (4) displays the restored room. */
     return Port_Pause3DS_Active() && (gUI.nextToLoad == 2 || gUI.nextToLoad == 3) && gPauseMenuOptions.unk11 != 0;
 }
 
-bool Port_Pause3DS_QuestPage(void) {
-    return Port_Pause3DS_MenuVisible() && gPauseMenuOptions.screen == PauseMenuScreen_2;
+PortPause3DSMainPage Port_Pause3DS_MainPage(void) {
+    if (!Port_Pause3DS_MenuVisible()) return PORT_PAUSE3DS_MAIN_NONE;
+    switch (gPauseMenuOptions.screen) {
+        case PauseMenuScreen_1:
+            return PORT_PAUSE3DS_MAIN_INVENTORY;
+        case PauseMenuScreen_4:
+        case PauseMenuScreen_5:
+            return PORT_PAUSE3DS_MAIN_MAP;
+        default:
+            return PORT_PAUSE3DS_MAIN_NONE;
+    }
 }
 
 const char* Port_Pause3DS_PageName(void) {
-    if (!Port_Pause3DS_MenuVisible()) {
-        return "";
-    }
+    if (!Port_Pause3DS_MenuVisible()) return "";
     switch (gPauseMenuOptions.screen) {
         case PauseMenuScreen_1:
-            return "物品";
-        case PauseMenuScreen_2:
-            return "收集";
+            return "物品与收集";
         case PauseMenuScreen_4:
         case PauseMenuScreen_5:
         case PauseMenuScreen_6:
@@ -87,35 +102,96 @@ const char* Port_Pause3DS_PageName(void) {
     }
 }
 
-unsigned Port_Pause3DS_QuestAction(void) {
-    if (!Port_Pause3DS_QuestPage() || gMenu.menuType == 0) {
-        return PORT_PAUSE3DS_ACTION_NONE;
-    }
-    switch (gMenu.field_0x3) {
-        case PAUSE_QUEST_SETTINGS_SLOT:
-            return PORT_PAUSE3DS_ACTION_SETTINGS;
-        case PAUSE_QUEST_UPDATES_SLOT:
-            return PORT_PAUSE3DS_ACTION_UPDATES;
-        default:
-            return PORT_PAUSE3DS_ACTION_NONE;
-    }
+static bool PauseTouchReady(void) {
+    return Port_Pause3DS_Active() && gUI.nextToLoad == 2 && sub_080A51F4() && gMenu.menuType != 0;
 }
 
 bool Port_Pause3DS_PageNavigationAvailable(void) {
-    return Port_Pause3DS_Active() && gUI.nextToLoad == 2 && sub_080A51F4() && gMenu.field_0xc != NULL &&
-           (gMenu.field_0xc[1] != 0 || gMenu.field_0xc[2] != 0);
+    return PauseTouchReady() && Port_Pause3DS_MainPage() != PORT_PAUSE3DS_MAIN_NONE && GetInventoryValue(ITEM_MAP) != 0;
+}
+
+unsigned Port_Pause3DS_SelectedItemSlot(void) {
+    return Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_INVENTORY && gMenu.field_0x3 < MENU_SLOT_SAVE_BUTTON
+               ? gMenu.field_0x3 : MENU_SLOT_SWORD;
+}
+
+int Port_Pause3DS_SelectedCollection(void) {
+    return Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_INVENTORY ? sSelectedCollection : -1;
+}
+
+static void QueuePauseTouch(PauseTouchType type, int x, int y) {
+    if (PauseTouchReady()) sQueuedTouch = (struct PauseTouch){ type, x, y };
 }
 
 void Port_Pause3DS_QueuePage(int direction) {
-    if (direction != 0 && Port_Pause3DS_PageNavigationAvailable()) {
-        sPausePageRequest = direction < 0 ? -1 : 1;
-    }
+    if (direction && Port_Pause3DS_PageNavigationAvailable()) QueuePauseTouch(PAUSE_TOUCH_PAGE, 0, 0);
 }
 
-void Port_Pause3DS_QueueAction(bool updates) {
-    if (Port_Pause3DS_QuestPage() && gUI.nextToLoad == 2 && sub_080A51F4() && gMenu.menuType != 0) {
-        sPauseActionRequest = updates ? PORT_PAUSE3DS_ACTION_UPDATES : PORT_PAUSE3DS_ACTION_SETTINGS;
+void Port_Pause3DS_QueueItem(unsigned slot) {
+    if (slot < MENU_SLOT_SAVE_BUTTON && Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_INVENTORY)
+        QueuePauseTouch(PAUSE_TOUCH_ITEM, slot, 0);
+}
+
+void Port_Pause3DS_QueueEquip(unsigned button) {
+    if (button < 2 && Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_INVENTORY)
+        QueuePauseTouch(PAUSE_TOUCH_EQUIP, button, 0);
+}
+
+void Port_Pause3DS_QueueCollection(unsigned slot) {
+    if (slot < 12 && Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_INVENTORY)
+        QueuePauseTouch(PAUSE_TOUCH_COLLECTION, slot, 0);
+}
+
+void Port_Pause3DS_QueueSave(void) {
+    if (Port_Pause3DS_MainPage() != PORT_PAUSE3DS_MAIN_NONE) QueuePauseTouch(PAUSE_TOUCH_SAVE, 0, 0);
+}
+
+void Port_Pause3DS_QueueMapPoint(int nativeX, int nativeY) {
+    if (Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_MAP && nativeX >= 0 && nativeX < 240 && nativeY >= 0 && nativeY < 160)
+        QueuePauseTouch(PAUSE_TOUCH_MAP, nativeX, nativeY);
+}
+
+void Port_Pause3DS_QueueNativePoint(int nativeX, int nativeY) {
+    if (Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_NONE && nativeX >= 0 && nativeX < 240 && nativeY >= 0 && nativeY < 160)
+        QueuePauseTouch(PAUSE_TOUCH_NATIVE, nativeX, nativeY);
+}
+
+void Port_Pause3DS_QueueBack(void) {
+    if (Port_Pause3DS_MainPage() == PORT_PAUSE3DS_MAIN_NONE) QueuePauseTouch(PAUSE_TOUCH_BACK, 0, 0);
+}
+
+static void RequestPausePage(u8 target) {
+    sub_080A4E84(target);
+    SoundReq(SFX_TEXTBOX_OPEN);
+    gMenu.field_0xc = NULL;
+}
+
+static bool HandlePausePageRequest(void) {
+    const PortPause3DSMainPage mainPage = Port_Pause3DS_MainPage();
+    const u8 screen = gPauseMenuOptions.screen;
+    if (mainPage != PORT_PAUSE3DS_MAIN_NONE) {
+        if (sFrameTouch.type == PAUSE_TOUCH_SAVE) {
+            sSaveReturnPage = screen;
+            RequestPausePage(PauseMenuScreen_11);
+            return true;
+        }
+        if (sFrameTouch.type == PAUSE_TOUCH_PAGE && GetInventoryValue(ITEM_MAP)) {
+            RequestPausePage(mainPage == PORT_PAUSE3DS_MAIN_INVENTORY ? 0xf : PauseMenuScreen_1);
+            return true;
+        }
     }
+    if (gInput.newKeys == B_BUTTON || sFrameTouch.type == PAUSE_TOUCH_BACK) {
+        switch (screen) {
+            case PauseMenuScreen_6:
+                RequestPausePage(PauseMenuScreen_4);
+                return true;
+            case PauseMenuScreen_7:
+            case PauseMenuScreen_8:
+                RequestPausePage(PauseMenuScreen_1);
+                return true;
+        }
+    }
+    return false;
 }
 #endif
 
@@ -139,9 +215,21 @@ void Subtask_PauseMenu(void) {
         pauseMenu_Variants[gPauseMenuOptions.unk11]();
         sub_080A5128();
         UpdateUIElements();
-        DrawUIElements();
+#ifdef TMC_3DS
+        if (gPauseMenuOptions.screen == PauseMenuScreen_1)
+#endif
+            DrawUIElements();
         if (gPauseMenuOptions.unk11 != 4) {
-            gUnk_08128A38[gPauseMenuOptions.screen].func();
+#ifdef TMC_3DS
+            if (gPauseMenuOptions.screen == PauseMenuScreen_6 && sFrameTouch.type == PAUSE_TOUCH_NATIVE &&
+                (sFrameTouch.y < 24 || sFrameTouch.y >= 124)) {
+                const u16 previousHeld = gInput.heldKeys;
+                gInput.heldKeys = sFrameTouch.y < 24 ? DPAD_UP : DPAD_DOWN;
+                gUnk_08128A38[PauseMenuScreen_6].func();
+                gInput.heldKeys = previousHeld;
+            } else
+#endif
+                gUnk_08128A38[gPauseMenuOptions.screen].func();
         }
         CopyOAM();
         {
@@ -162,8 +250,10 @@ void PauseMenu_Variant0(void) {
     int r0, r1;
 
 #ifdef TMC_3DS
-    sPausePageRequest = 0;
-    sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+    sQueuedTouch.type = PAUSE_TOUCH_NONE;
+    sFrameTouch.type = PAUSE_TOUCH_NONE;
+    sSelectedCollection = -1;
+    sSaveReturnPage = PauseMenuScreen_1;
 #endif
     UpdateVisibleFusionMapMarkers();
     sub_080A4D34();
@@ -187,6 +277,10 @@ void PauseMenu_Variant0(void) {
     gPauseMenuOptions.unk15 = r1;
     r0 = gUnk_08128A38[gPauseMenuOptions.screen].unk1;
     r0 = sub_080A50A0(r0);
+#ifdef TMC_3DS
+    if (!GetInventoryValue(ITEM_MAP) || (r0 != PauseMenuScreen_4 && r0 != PauseMenuScreen_5))
+        r0 = PauseMenuScreen_1;
+#endif
     gPauseMenuOptions.screen = r0;
     gPauseMenuOptions.screen2 = r0;
     sub_080A4DB8(r0);
@@ -206,11 +300,10 @@ void PauseMenu_Variant2(void) {
     int iVar4;
     s32 bVar5;
 #ifdef TMC_3DS
-    const int pageRequest = sPausePageRequest;
-    sPausePageRequest = 0;
-    if (!sub_080A51F4() || gPauseMenuOptions.screen != PauseMenuScreen_2) {
-        sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
-    }
+    sFrameTouch = sQueuedTouch;
+    sQueuedTouch.type = PAUSE_TOUCH_NONE;
+    if (!PauseTouchReady()) sFrameTouch.type = PAUSE_TOUCH_NONE;
+    const bool handledPage = PauseTouchReady() && HandlePausePageRequest();
 #endif
 
 #ifdef PC_PORT
@@ -218,13 +311,22 @@ void PauseMenu_Variant2(void) {
      * "SLEEP option on the QUEST STATUS screen". SELECT on the quest
      * page arms the deferred warp (Rando_Homewarp_Tick fires it after
      * the menu closes) and requests the normal menu-exit path. */
-    if (sub_080A51F4() && gPauseMenuOptions.screen == PauseMenuScreen_2 && (gInput.newKeys & SELECT_BUTTON) &&
+    if (sub_080A51F4() && (gInput.newKeys & SELECT_BUTTON) &&
+#ifdef TMC_3DS
+        !handledPage && gPauseMenuOptions.screen == PauseMenuScreen_1 && sSelectedCollection >= 0 &&
+#else
+        gPauseMenuOptions.screen == PauseMenuScreen_2 &&
+#endif
         Rando_Homewarp_Request()) {
         SoundReq(SFX_TEXTBOX_OPEN);
         gPauseMenuOptions.screen2 = 0xe; /* request menu close */
     }
 #endif
-    if (sub_080A51F4() && (gMenu.field_0xc != NULL)) {
+    if (sub_080A51F4() && gMenu.field_0xc != NULL
+#ifdef TMC_3DS
+        && !handledPage
+#endif
+    ) {
         iVar1 = -1;
         switch (gInput.newKeys) {
             case START_BUTTON:
@@ -241,13 +343,6 @@ void PauseMenu_Variant2(void) {
             case B_BUTTON:
                 iVar1 = 3;
                 break;
-#ifdef TMC_3DS
-            case 0:
-                if (pageRequest != 0 && sPauseActionRequest == PORT_PAUSE3DS_ACTION_NONE) {
-                    iVar1 = pageRequest < 0 ? 1 : 2;
-                }
-                break;
-#endif
         }
         if (iVar1 >= 0) {
             switch (bVar5 = gMenu.field_0xc[iVar1]) {
@@ -274,7 +369,7 @@ void PauseMenu_Variant2(void) {
     bVar5 = sub_080A50A0(gPauseMenuOptions.screen2);
     if (gPauseMenuOptions.screen != bVar5) {
 #ifdef TMC_3DS
-        sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
+        sFrameTouch.type = PAUSE_TOUCH_NONE;
 #endif
         gPauseMenuOptions.screen2 = bVar5;
         sub_080A51D4();
@@ -517,27 +612,125 @@ const ItemMenuTableEntry gItemMenuTable[] = {
                                    0xb5, 0x75 },
 };
 
+#ifdef TMC_3DS
+static unsigned MoveCombinedItemCursor(unsigned slot, unsigned key) {
+    const unsigned bottleRow = 12;
+    if (slot >= bottleRow) {
+        const unsigned bottle = slot - bottleRow;
+        if (key == DPAD_UP) return 9 + (bottle * 3) / 4;
+        if (key == DPAD_DOWN) return (bottle * 3) / 4;
+        if (key == DPAD_LEFT) return bottleRow + (bottle + 3) % 4;
+        if (key == DPAD_RIGHT) return bottleRow + (bottle + 1) % 4;
+        return slot;
+    }
+    const unsigned column = slot % 3;
+    if (key == DPAD_UP) return slot < 3 ? bottleRow + column : slot - 3;
+    if (key == DPAD_DOWN) return slot >= 9 ? bottleRow + column : slot + 3;
+    if (key == DPAD_LEFT) return slot - column + (column + 2) % 3;
+    if (key == DPAD_RIGHT) return slot - column + (column + 1) % 3;
+    return slot;
+}
+
+static bool HasPauseSwordSkills(void) {
+    for (unsigned item = ITEM_SKILL_SPIN_ATTACK; item <= ITEM_SKILL_PERIL_BEAM; ++item) {
+        if (GetInventoryValue(item)) return true;
+    }
+    return false;
+}
+
+static u32 PauseCollectionTextItem(unsigned slot) {
+    static const u8 kRoundSlotItems[] = {
+        ITEM_EARTH_ELEMENT, ITEM_FIRE_ELEMENT, ITEM_WATER_ELEMENT, ITEM_WIND_ELEMENT,
+        ITEM_GRIP_RING, ITEM_POWER_BRACELETS, ITEM_FLIPPERS,
+    };
+    switch (slot) {
+        case 0:
+            if (GetInventoryValue(ITEM_QST_TINGLE_TROPHY)) return ITEM_QST_TINGLE_TROPHY;
+            return GetInventoryValue(ITEM_KINSTONE_BAG) ? ITEM_KINSTONE_BAG : 0;
+        case 1:
+            return 99; /* The original collection page's heart piece text. */
+        case 2:
+            return HasPauseSwordSkills() ? 0x70 : 0;
+        case 3:
+            if (GetInventoryValue(ITEM_QST_CARLOV_MEDAL)) return ITEM_QST_CARLOV_MEDAL;
+            return GetInventoryValue(ITEM_SHELLS) ? ITEM_SHELLS : 0;
+        case 11:
+            for (unsigned item = ITEM_QST_SWORD; item <= ITEM_QST_GRAVEYARD_KEY; ++item) {
+                if (GetInventoryValue(item) == 1) return item;
+            }
+            return 0;
+        default:
+            if (slot < 4 || slot > 10) return 0;
+            return GetInventoryValue(kRoundSlotItems[slot - 4]) ? kRoundSlotItems[slot - 4] : 0;
+    }
+}
+
+static void SelectPauseCollection(unsigned slot) {
+    const u32 item = PauseCollectionTextItem(slot);
+    sSelectedCollection = slot;
+    sub_080A6F6C(TEXT_INDEX(TEXT_ITEMS, 0) + item);
+    if (slot == 0 && (item == ITEM_KINSTONE_BAG || item == ITEM_QST_TINGLE_TROPHY)) {
+        sub_080A4E84(PauseMenuScreen_7);
+        SoundReq(SFX_TEXTBOX_SELECT);
+    } else if (slot == 2 && item) {
+        sub_080A4E84(PauseMenuScreen_8);
+        SoundReq(SFX_TEXTBOX_SELECT);
+    } else {
+        SoundReq(SFX_TEXTBOX_CHOICE);
+    }
+}
+#endif
+
 void PauseMenu_ItemMenu_Update(void) {
     static const u8 gUnk_08128BF4[] = { 14, 15, 2, 0 };
     u32 item;
     u32 menuSlot;
+#ifndef TMC_3DS
     const ItemMenuTableEntry* entry;
+#endif
 
     if (sub_080A51F4()) {
         gMenu.field_0xc = (u8*)gUnk_08128BF4;
         menuSlot = gMenu.field_0x3;
 
+        unsigned keys = gInput.newKeys;
+#ifdef TMC_3DS
+        if (menuSlot >= MENU_SLOT_SAVE_BUTTON) menuSlot = MENU_SLOT_SWORD;
+        if (sFrameTouch.type == PAUSE_TOUCH_COLLECTION) {
+            SelectPauseCollection(sFrameTouch.x);
+            return;
+        }
+        if (sFrameTouch.type == PAUSE_TOUCH_ITEM) {
+            menuSlot = sFrameTouch.x;
+            sSelectedCollection = -1;
+            keys = 0;
+        } else if (sFrameTouch.type == PAUSE_TOUCH_EQUIP) {
+            if (sSelectedCollection >= 0) return;
+            keys = sFrameTouch.x == SLOT_A ? A_BUTTON : B_BUTTON;
+        } else if (gInput.menuScrollKeys & (DPAD_UP | DPAD_DOWN | DPAD_LEFT | DPAD_RIGHT)) {
+            sSelectedCollection = -1;
+        } else if (sSelectedCollection >= 0) {
+            /* Recreate the footer when returning from a detail or save page.
+             * The native footer only rebuilds when its text index changes. */
+            sub_080A6F6C(TEXT_INDEX(TEXT_ITEMS, 0) + PauseCollectionTextItem(sSelectedCollection));
+            return;
+        }
+#else
         entry = &gItemMenuTable[menuSlot];
-        switch (gInput.newKeys) {
+#endif
+        switch (keys) {
             case A_BUTTON:
                 if (menuSlot == MENU_SLOT_SAVE_BUTTON) {
+#ifdef TMC_3DS
+                    sSaveReturnPage = PauseMenuScreen_1;
+#endif
                     sub_080A4E84(0xb);
                     SoundReq(SFX_TEXTBOX_SELECT);
                     break;
                 }
             case B_BUTTON:
                 if (gPauseMenu.items[menuSlot] != 0) {
-                    u32 slot = !!(gInput.newKeys ^ A_BUTTON);
+                    u32 slot = keys == A_BUTTON ? SLOT_A : SLOT_B;
 #ifdef PC_PORT
                     /* Optional SELECT-hold gesture: holding SELECT while
                      * pressing A/B on the cursor item binds it to a port
@@ -545,6 +738,9 @@ void PauseMenu_ItemMenu_Update(void) {
                      * primary A/B equip. Persists through the port config,
                      * never the save file; fire it in-game via X/Y/L2/R2 or
                      * the L-modifier. Uses the port's own soft-slot store. */
+#ifdef TMC_3DS
+                    if (sFrameTouch.type != PAUSE_TOUCH_EQUIP)
+#endif
                     {
                         extern bool Port_Reborn_IsEnabled(int feat);
                         extern void Port_SoftSlots_SetAssignment(int s, unsigned char id);
@@ -560,6 +756,10 @@ void PauseMenu_ItemMenu_Update(void) {
                 }
                 break;
             default:
+#ifdef TMC_3DS
+                if (sFrameTouch.type != PAUSE_TOUCH_ITEM)
+                    menuSlot = MoveCombinedItemCursor(menuSlot, gInput.menuScrollKeys);
+#else
                 switch (gInput.menuScrollKeys) {
                     case DPAD_UP:
                         menuSlot = entry->up;
@@ -574,6 +774,7 @@ void PauseMenu_ItemMenu_Update(void) {
                         menuSlot = entry->right;
                         break;
                 }
+#endif
                 break;
         }
         if (gMenu.field_0x3 != menuSlot) {
@@ -928,22 +1129,10 @@ void sub_080A56A0(void) {
             break;
     }
 
-#ifdef TMC_3DS
-    const unsigned action = sPauseActionRequest;
-    sPauseActionRequest = PORT_PAUSE3DS_ACTION_NONE;
-    if (action != PORT_PAUSE3DS_ACTION_NONE) {
-        gMenu.field_0x3 = action == PORT_PAUSE3DS_ACTION_UPDATES ? PAUSE_QUEST_UPDATES_SLOT : PAUSE_QUEST_SETTINGS_SLOT;
-        uVar2 = 0xff;
-    }
-#endif
     if (uVar2 != 0xff) {
         gMenu.field_0x3 = uVar2;
         SoundReq(SFX_TEXTBOX_CHOICE);
-#ifdef TMC_3DS
-    } else if (action != PORT_PAUSE3DS_ACTION_NONE || gInput.newKeys == A_BUTTON) {
-#else
     } else if (gInput.newKeys == A_BUTTON) {
-#endif
         uVar2 = gMenu.field_0x3;
         iVar1 = 0;
         switch (uVar2) {
@@ -956,20 +1145,12 @@ void sub_080A56A0(void) {
                     }
                 }
                 break;
-#ifdef TMC_3DS
-            case PAUSE_QUEST_SETTINGS_SLOT:
-            case PAUSE_QUEST_UPDATES_SLOT:
-                Port_SecondScreen_3DS_OpenPauseSettings(uVar2 == PAUSE_QUEST_UPDATES_SLOT);
-                SoundReq(SFX_TEXTBOX_SELECT);
-                break;
-#else
             case 4:
                 iVar1 = 9;
                 break;
             case 5:
                 iVar1 = 10;
                 break;
-#endif
         }
         if (iVar1 != 0) {
             sub_080A4E84(iVar1);
@@ -1005,18 +1186,11 @@ void sub_080A56A0(void) {
             case 2:
                 item = 0x70;
                 break;
-#ifdef TMC_3DS
-            case PAUSE_QUEST_SETTINGS_SLOT:
-            case PAUSE_QUEST_UPDATES_SLOT:
-                item = 0; /* The 3DS footer supplies the labels. */
-                break;
-#else
             case 4:
                 item = 0x74;
                 break;
             case 5:
                 item = 0x73;
-#endif
         }
     }
     sub_080A6F6C(TEXT_INDEX(TEXT_ITEMS, 0) + item);
@@ -1050,17 +1224,9 @@ void sub_080A57F4(void) {
     } else {
         frameIndex++;
     }
-#ifdef TMC_3DS
-    if (Port_Pause3DS_QuestAction() == PORT_PAUSE3DS_ACTION_NONE)
-#endif
-        DrawDirect(DRAW_DIRECT_SPRITE_INDEX, frameIndex);
+    DrawDirect(DRAW_DIRECT_SPRITE_INDEX, frameIndex);
 
     for (index = 0, pbVar6 = (struct_gUnk_08128C14*)((u8*)puVar8 + 5); index < 0x10; pbVar6++, index++) {
-#ifdef TMC_3DS
-        if (index == PAUSE_QUEST_SETTINGS_SLOT || index == PAUSE_QUEST_UPDATES_SLOT) {
-            continue;
-        }
-#endif
         uVar5 = GetPauseMenu2ItemSlot(index);
         if (uVar5 != 0) {
             puVar10 = &puVar8[index];
@@ -1164,6 +1330,18 @@ void sub_080A59C8(void) {
             break;
     }
 
+#ifdef TMC_3DS
+    if (sFrameTouch.type == PAUSE_TOUCH_BACK) {
+        cursor_position = 1;
+        select_option = TRUE;
+    } else if (sFrameTouch.type == PAUSE_TOUCH_NATIVE && sFrameTouch.x >= 32 && sFrameTouch.x < 216 &&
+               sFrameTouch.y >= 64 && sFrameTouch.y < 128) {
+        /* The save popup starts on BG row 8; its choices are two text
+         * lines apart. Each touch confirms the same choice as A. */
+        cursor_position = sFrameTouch.y >= 96;
+        select_option = TRUE;
+    }
+#endif
     if (select_option) {
         gMenu.transitionTimer = 255;
         if (cursor_position == 0) {
@@ -1200,16 +1378,24 @@ void sub_080A5A90(void) {
 
     switch (gMenu.transitionTimer) {
         case 0:
-            if ((gInput.newKeys & (START_BUTTON | B_BUTTON | A_BUTTON)) != 0) {
+            if ((gInput.newKeys & (START_BUTTON | B_BUTTON | A_BUTTON)) != 0
+#ifdef TMC_3DS
+                || sFrameTouch.type == PAUSE_TOUCH_BACK || sFrameTouch.type == PAUSE_TOUCH_NATIVE
+#endif
+            ) {
                 gMenu.transitionTimer = 255;
             }
             break;
         case 0xff:
+#ifdef TMC_3DS
+            uVar1 = sSaveReturnPage;
+#else
             if (gPauseMenuOptions.screen == 10) {
                 uVar1 = 2;
             } else {
                 uVar1 = 1;
             }
+#endif
             sub_080A4E84(uVar1);
             break;
         default:
@@ -1342,6 +1528,15 @@ void sub_080A5C9C(void) {
                 }
                 break;
         }
+#ifdef TMC_3DS
+        if (sFrameTouch.type == PAUSE_TOUCH_MAP && sFrameTouch.x >= 34 && sFrameTouch.x < 65 &&
+            floorMetadata->numFloors > 0 && floorMetadata->numFloors <= 6) {
+            extern u8 gUnk_08128D3C[];
+            const int top = gUnk_08128D3C[floorMetadata->numFloors] - 6;
+            const int y = sFrameTouch.y - top;
+            if (y >= 0 && y < floorMetadata->numFloors * 12) newChoice = y / 12;
+        }
+#endif
         if (gMenu.field_0x3 != newChoice) {
             gMenu.field_0x3 = newChoice;
             sub_080A5CFC(newChoice, &gMenu, newChoice);
@@ -1611,6 +1806,11 @@ void sub_080A612C(void) {
         iVar3 = newChoice + 8;
         newChoice = iVar3 / 8;
         newChoice = iVar3 - newChoice * 8;
+#ifdef TMC_3DS
+        if (sFrameTouch.type == PAUSE_TOUCH_NATIVE && sFrameTouch.y >= 35 && sFrameTouch.y < 59 &&
+            sFrameTouch.x >= 13 && sFrameTouch.x < 229)
+            newChoice = (sFrameTouch.x - 13) / 27;
+#endif
         if (gMenu.field_0x3 != newChoice) {
             gMenu.field_0x3 = newChoice;
             SoundReq(SFX_TEXTBOX_CHOICE);
@@ -1713,6 +1913,21 @@ void sub_080A62E0(void) {
             break;
     }
 
+#ifdef TMC_3DS
+    if (sFrameTouch.type == PAUSE_TOUCH_MAP) {
+        int32_t region;
+        if (Port_SecondScreenWorldMap_GetRegionAt(sFrameTouch.x, sFrameTouch.y, &region, NULL, NULL, NULL, NULL) &&
+            region >= 0 && region <= 0x10) {
+            const bool wasSelected = gMenu.field_0x3 == region;
+            windcrest = region;
+            if (wasSelected && IS_BIT_SET(gSave.windcrests, region)) {
+                sub_080A4E84(PauseMenuScreen_6);
+                SoundReq(SFX_TEXTBOX_SELECT);
+                windcrest = -1;
+            }
+        }
+    }
+#endif
     if (-1 < windcrest) {
         gMenu.field_0x3 = windcrest;
         SoundReq(SFX_TEXTBOX_CHOICE);

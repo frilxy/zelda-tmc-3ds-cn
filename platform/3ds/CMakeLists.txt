@@ -129,6 +129,7 @@ add_executable(tmc-3ds
     source/top_view_3ds.c
     source/platform_gpu_3ds.c
     source/bottom_idle_3ds.c
+    source/bottom_pause_hud_3ds.c
     source/boot_screen_3ds.c
     source/bottom_frame_state_3ds.c
     source/bottom_map_anim_3ds.c

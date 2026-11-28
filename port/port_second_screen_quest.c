@@ -201,10 +201,6 @@ static const ObjSource kTechSource = { kTechVramGroups, (int)sizeof(kTechVramGro
 static const u8 kObjW[3][4] = { { 8, 16, 32, 64 }, { 16, 32, 32, 64 }, { 8, 8, 16, 32 } };
 static const u8 kObjH[3][4] = { { 8, 16, 32, 64 }, { 8, 8, 16, 32 }, { 16, 32, 32, 64 } };
 
-static uint32_t sStatic[QUEST_W * QUEST_H];
-static uint32_t sFrame[QUEST_W * QUEST_H];
-static const uint32_t* volatile sPublished = NULL;
-
 static uint32_t Rgb555ToRgba8888(uint16_t c) {
     uint8_t r = (uint8_t)((c & 0x1Fu) << 3);
     uint8_t g = (uint8_t)(((c >> 5) & 0x1Fu) << 3);
@@ -220,6 +216,7 @@ static const u8* SlotEntry(int slot) {
     return table + (size_t)slot * 8u;
 }
 
+#ifdef TMC_3DS
 /* First EWRAM-destined record of a gfx group — the menu screens stage their
  * BG tilemaps through buffers whose absolute address is a per-region link
  * detail, so the record is matched by destination region (the same walk
@@ -272,37 +269,7 @@ static void ApplyPaletteGroup(u32 group, uint16_t* bgPal) {
     }
 }
 
-/* Paints the 32x20 BG2 tilemap into the layer. Color 0 stays transparent, so
- * the caller's backdrop shows through the slab's rounded outline. */
-static void DrawBgLayer(const u8* tilemap, u32 mapLen, const u8* tiles, u32 tilesLen, const uint16_t* bgPal) {
-    u32 tileCount = tilesLen / 32u;
-    int32_t x, y;
-    for (y = 0; y < QUEST_H; y++) {
-        u32 tileRow = ((u32)y >> 3) & 31u;
-        for (x = 0; x < QUEST_W; x++) {
-            u32 tileCol = ((u32)x >> 3) & 31u;
-            u32 entryOff = (tileRow * 32u + tileCol) * 2u;
-            u16 entry = (entryOff + 2u <= mapLen) ? Port_ReadU16(tilemap + entryOff) : 0;
-            u32 tileId = entry & 0x3FFu;
-            int32_t inX = x & 7, inY = y & 7;
-            u8 packed, colorIndex;
-            if (tileId >= tileCount) {
-                continue;
-            }
-            if (entry & 0x400u)
-                inX = 7 - inX;
-            if (entry & 0x800u)
-                inY = 7 - inY;
-            packed = tiles[tileId * 32u + (u32)inY * 4u + ((u32)inX >> 1)];
-            colorIndex = (inX & 1) ? (u8)(packed >> 4) : (u8)(packed & 0xFu);
-            if (colorIndex == 0) {
-                continue;
-            }
-            sStatic[(size_t)y * QUEST_W + (size_t)x] =
-                Rgb555ToRgba8888(bgPal[(((u32)entry >> 12) & 0xFu) * 16u + colorIndex]);
-        }
-    }
-}
+#endif
 
 /* One OBJ palette bank, from the screen's own palette group when it names
  * one and from the pause menu's loaded chain otherwise. OBJ banks are the
@@ -642,6 +609,175 @@ static QuestCell SectionCell(int section, int idx, const SecondScreenSnapshot* s
             return CollectionCell(idx, snap);
     }
 }
+
+#ifdef TMC_3DS
+/* Pixel bounds of the combined inventory page. The ROM's seven linked wells
+ * move as one piece, while the four summary wells are each placed separately. */
+enum {
+    COMPACT_WIDTH = 320, COMPACT_HEIGHT = 240,
+    COMPACT_DIAMOND_X = 152, COMPACT_DIAMOND_Y = 71,
+    COMPACT_DIAMOND_SRC_X = 123, COMPACT_DIAMOND_SRC_Y = 31,
+    COMPACT_TRAY_X = 150, COMPACT_TRAY_Y = 158,
+    COMPACT_TRAY_SRC_X = 35, COMPACT_TRAY_SRC_Y = 108,
+};
+
+static const SecondScreenQuestRect kCompactSummary[4] = {
+    {248, 66, 44, 32}, {248, 99, 44, 32}, {248, 132, 44, 32}, {248, 165, 44, 32},
+};
+static const SecondScreenQuestRect kCompactSummarySource[4] = {
+    {34, 39, 38, 34}, {75, 39, 39, 34}, {34, 78, 38, 28}, {75, 78, 39, 28},
+};
+/* The native slot table starts at the top of the diamond. The public order
+ * follows the screen from the left clockwise. */
+static const u8 kCompactDiamondSlots[] = {10, 9, 11, 12, 13, 14, 15};
+static const SecondScreenQuestRect kCompactTray = {COMPACT_TRAY_X, COMPACT_TRAY_Y, 82, 23};
+
+SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id) {
+    if (id >= 0 && id < 4) return kCompactSummary[id];
+    if (id == PORT_QUEST_COMPACT_COUNT - 1) return kCompactTray;
+    if (id >= 4 && id < PORT_QUEST_COMPACT_COUNT - 1) {
+        const u8* entry = SlotEntry(kCompactDiamondSlots[id - 4]);
+        if (entry != NULL) {
+            const int x = entry[6] - COMPACT_DIAMOND_SRC_X + COMPACT_DIAMOND_X;
+            const int y = entry[7] - COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_Y;
+            return (SecondScreenQuestRect){x - 11, y - 11, 22, 22};
+        }
+    }
+    return (SecondScreenQuestRect){0};
+}
+
+typedef struct {
+    const u8* tilemap;
+    const u8* tiles;
+    u32 mapLen, tilesLen;
+    uint32_t palette[256];
+} CompactQuestArt;
+
+/* This cache is initialized and used by the main thread only. The existing
+ * quest and detail screen painters keep their own rendering scratch. */
+static CompactQuestArt sCompactArt;
+
+static bool LoadCompactQuestArt(void) {
+    if (sCompactArt.tilemap != NULL) return true;
+    const u8* tilemap = QuestTilemap(QUEST_GFX_GROUP, &sCompactArt.mapLen);
+    sCompactArt.tiles = Port_ResolveGfxGroupVram(QUEST_GFX_GROUP, QUEST_TILES_DEST, &sCompactArt.tilesLen);
+    if (tilemap == NULL || sCompactArt.tiles == NULL) return false;
+    uint16_t bgPal[256] = {0};
+    for (size_t i = 0; i < sizeof(kQuestPaletteGroups); ++i)
+        ApplyPaletteGroup(kQuestPaletteGroups[i], bgPal);
+    for (int i = 0; i < 256; ++i)
+        sCompactArt.palette[i] = Rgb555ToRgba8888(bgPal[i]);
+    sCompactArt.tilemap = tilemap;
+    return true;
+}
+
+/* Sample the existing pause menu BG2 tilemap. Only these subrectangles are
+ * drawn; the ROM slab and navigation surrounding them never reach this page. */
+static void DrawCompactQuestBg(uint32_t* pixels, int stride, SecondScreenQuestRect dst, SecondScreenQuestRect src) {
+    for (int y = 0; y < dst.h; ++y) {
+        const int sy = src.y + y * src.h / dst.h;
+        for (int x = 0; x < dst.w; ++x) {
+            const int sx = src.x + x * src.w / dst.w;
+            const u32 mapOff = (u32)((sy / 8) * 32 + sx / 8) * 2u;
+            if (mapOff + 2u > sCompactArt.mapLen) continue;
+            const u16 tile = Port_ReadU16(sCompactArt.tilemap + mapOff);
+            int tx = sx & 7;
+            int ty = sy & 7;
+            if (tile & 0x400u) tx = 7 - tx;
+            if (tile & 0x800u) ty = 7 - ty;
+            const u32 off = (tile & 0x3ffu) * 32u + (u32)(ty * 4 + tx / 2);
+            if (off >= sCompactArt.tilesLen) continue;
+            const u8 packed = sCompactArt.tiles[off];
+            const u8 color = (tx & 1) != 0 ? packed >> 4 : packed & 0xfu;
+            if (color != 0)
+                pixels[(dst.y + y) * stride + dst.x + x] = sCompactArt.palette[(tile >> 12) * 16u + color];
+        }
+    }
+}
+
+static void DrawCompactQuestItem(uint32_t* pixels, int stride, int x, int y, u32 item) {
+    Port_SecondScreenRender_DrawItemIconBank(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride,
+                                            x - ICON_BOX_DX, y - ICON_BOX_DY, 1, (uint8_t)item, ITEM_CMD_PAL_BANK);
+}
+
+static void DrawCompactSummaryItem(uint32_t* pixels, int stride, int slot, const SecondScreenSnapshot* snap) {
+    const SecondScreenQuestRect dst = kCompactSummary[slot];
+    const SecondScreenQuestRect src = kCompactSummarySource[slot];
+    const QuestCell content = CollectionCell(slot, snap);
+    if (content.item == 0 && content.frame == 0) return;
+
+    const u8* entry = SlotEntry(slot);
+    if (entry == NULL) return;
+    /* Clip the original OBJ group to its well. Original art and digits stay
+     * at 1:1; only the BG well stretches to the new rectangle. */
+    const int x = dst.x + (entry[6] - src.x) * dst.w / src.w;
+    const int y = dst.y + entry[7] - src.y + (dst.h - src.h) / 2;
+    uint32_t well[44 * 32] = {0};
+    if (content.item != 0) {
+        int dy = content.item == ITEM_QST_TINGLE_TROPHY ? TROPHY_ICON_DY :
+                 content.item == ITEM_QST_CARLOV_MEDAL ? MEDAL_ICON_DY : 0;
+        Port_SecondScreenRender_DrawItemIconBank(well, dst.w, dst.h, dst.w, x - dst.x - ICON_BOX_DX,
+                                                y - dst.y - ICON_BOX_DY + dy, 1, (uint8_t)content.item,
+                                                ITEM_CMD_PAL_BANK);
+    } else {
+        DrawObjFrame(well, dst.w, dst.h, SPRITE_PAUSE_MISC, content.frame, x - dst.x, y - dst.y, SLOT_OAM_EXTRA);
+    }
+    if (content.skill) {
+        DrawObjFrame(well, dst.w, dst.h, DIGIT_SPRITE, DIGIT_FRAME, x - dst.x + SKILL_DIGIT_DX,
+                     y - dst.y + SKILL_DIGIT_DY, DIGIT_OAM_EXTRA + (u32)(content.count % 10));
+    } else if (content.count >= 0) {
+        unsigned value = (unsigned)content.count;
+        for (int i = 0; i < SHELL_DIGIT_COUNT; ++i) {
+            DrawObjFrame(well, dst.w, dst.h, DIGIT_SPRITE, DIGIT_FRAME, x - dst.x + SHELL_DIGIT_DX - 8 * i,
+                         y - dst.y + SHELL_DIGIT_DY, DIGIT_OAM_EXTRA + value % 10u);
+            value /= 10u;
+        }
+    }
+    for (int row = 0; row < dst.h; ++row)
+        for (int col = 0; col < dst.w; ++col)
+            if (well[row * dst.w + col] != 0)
+                pixels[(dst.y + row) * stride + dst.x + col] = well[row * dst.w + col];
+}
+
+void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap) {
+    if (pixels == NULL || stride < COMPACT_WIDTH || snap == NULL) return;
+    const bool ready = LoadCompactQuestArt();
+    if (ready) {
+        const SecondScreenQuestRect circles = {COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, 81, 79};
+        const SecondScreenQuestRect circlesSrc = {COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, 81, 79};
+        const SecondScreenQuestRect traySrc = {COMPACT_TRAY_SRC_X, COMPACT_TRAY_SRC_Y, 82, 23};
+        DrawCompactQuestBg(pixels, stride, circles, circlesSrc);
+        DrawCompactQuestBg(pixels, stride, kCompactTray, traySrc);
+    } else {
+        Port_SecondScreenTheme_DrawWell(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride,
+                                        kCompactTray.x, kCompactTray.y, kCompactTray.w, kCompactTray.h, 1);
+    }
+    for (int i = 0; i < 4; ++i) {
+        const SecondScreenQuestRect r = kCompactSummary[i];
+        if (ready)
+            DrawCompactQuestBg(pixels, stride, r, kCompactSummarySource[i]);
+        else
+            Port_SecondScreenTheme_DrawWell(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride, r.x, r.y, r.w, r.h, 1);
+        DrawCompactSummaryItem(pixels, stride, i, snap);
+    }
+    for (int i = 0; i < (int)sizeof(kCompactDiamondSlots); ++i) {
+        const SecondScreenQuestRect r = Port_SecondScreenQuest_Compact3DSRect(i + 4);
+        const int slot = kCompactDiamondSlots[i];
+        const QuestCell c = slot <= 12 ? SectionCell(0, slot - 9, snap) : SectionCell(2, slot - 13, snap);
+        if (!r.w) continue;
+        if (!ready)
+            Port_SecondScreenTheme_DrawWell(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride, r.x, r.y, r.w, r.h, 1);
+        DrawCompactQuestItem(pixels, stride, r.x + r.w / 2, r.y + r.h / 2, c.item);
+    }
+    for (int i = 0; i < QUEST_TRAY_SLOTS; ++i) {
+        const u8* entry = SlotEntry(SLOT_QUEST_ITEM + i);
+        if (entry != NULL) {
+            DrawCompactQuestItem(pixels, stride, COMPACT_TRAY_X + entry[6] - COMPACT_TRAY_SRC_X,
+                                 COMPACT_TRAY_Y + entry[7] - COMPACT_TRAY_SRC_Y, snap->questItems[i]);
+        }
+    }
+}
+#endif
 
 static void FormatCount(char* dst, size_t cap, int32_t value) {
     size_t i = 0, j;

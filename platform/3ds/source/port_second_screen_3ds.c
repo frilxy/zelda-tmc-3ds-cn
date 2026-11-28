@@ -17,6 +17,28 @@
  * source list. All normal exported functions retain their original symbols. */
 #include "../../../port/port_second_screen.c"
 
+void Port_SecondScreen_3DS_DrawCombinedCollection(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap) {
+    Port_SecondScreenQuest_DrawCompact3DS(pixels, stride, snap);
+}
+
+int Port_SecondScreen_3DS_CombinedCollectionTap(int x, int y) {
+    for (int id = 0; id < PORT_QUEST_COMPACT_COUNT; ++id) {
+        const SecondScreenQuestRect r = Port_SecondScreenQuest_Compact3DSRect(id);
+        if (x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h) return id;
+    }
+    return -1;
+}
+
+bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* width, int* height) {
+    const SecondScreenQuestRect r = Port_SecondScreenQuest_Compact3DSRect(id);
+    if (!r.w) return false;
+    if (x) *x = r.x;
+    if (y) *y = r.y;
+    if (width) *width = r.w;
+    if (height) *height = r.h;
+    return true;
+}
+
 static volatile uint8_t sIdleSettingsOpen;
 static uint8_t sIdleOwnsSettingsTab;
 static volatile uint8_t sIdleBackVisible;
@@ -213,9 +235,8 @@ uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height
 void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title) {
     if (!title || !*title) return;
     SSurf surface = { pixels, 320, 240, stride };
-    const int textWidth = Port_SecondScreenTheme_TitleTextWidth(title, 1);
-    DrawPanelHeaderChip(&surface, 40.0f + (float)textWidth / 2 + 34.0f / 3,
-                       6.0f, title, 1, 1.0f / 3);
+    DrawLabelPlate(&surface, 12, 8, 124, 31, SS_PLATE_TITLE);
+    MenuTextCenteredFace(&surface, title, 68, 19, 1, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
 }
 
 void Port_SecondScreen_3DS_ResetFrameState(void) {

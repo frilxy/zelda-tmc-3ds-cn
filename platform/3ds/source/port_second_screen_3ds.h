@@ -19,6 +19,11 @@ void Port_SecondScreen_3DS_OpenPauseSettings(bool updates);
 bool Port_SecondScreen_3DS_PauseSettingsOpen(void);
 void Port_SecondScreen_3DS_ClosePauseSettings(void);
 void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title);
+void Port_SecondScreen_3DS_DrawCombinedCollection(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap);
+/* IDs: bag/heart/skills/shells (0–3), diamond left/top/right/bottom (4–7),
+ * passive gear left to right (8–10), carried quest-item tray (11). */
+int Port_SecondScreen_3DS_CombinedCollectionTap(int x, int y);
+bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* width, int* height);
 
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick);

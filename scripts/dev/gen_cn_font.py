@@ -33,6 +33,8 @@ SOURCES = [
     "port/port_second_screen_theme.c",
     "src/menu/pauseMenu.c",
     "platform/3ds/source/port_config_3ds.c",
+    "platform/3ds/source/port_ppu_3ds.c",
+    "platform/3ds/source/bottom_pause_hud_3ds.c",
     "platform/3ds/source/main_3ds.c",
     "port/port_config.h",
     "platform/3ds/source/config_values_3ds.h",
