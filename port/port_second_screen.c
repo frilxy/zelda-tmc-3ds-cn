@@ -2028,18 +2028,6 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 #ifdef TMC_3DS
 static void PaintTechniqueSelection(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl,
                                     int px, int py) {
-    /* Descriptions follow the eight moves in the original pause menu. Use
-     * the snapshot and ROM table only; gameplay owns the message engine. */
-    static const char* const descriptions[][2] = {
-        {"回旋斩", "按住剑键蓄力，松开旋斩"},
-        {"滚动斩", "翻滚中按剑键突刺"},
-        {"冲刺斩", "穿飞马靴冲刺时按剑键"},
-        {"碎石斩", "挥剑就能打碎石块"},
-        {"剑气", "满生命时挥剑发出剑气"},
-        {"大回旋斩", "回旋斩时连按剑键"},
-        {"下刺", "用羽翼跳起后按剑键下刺"},
-        {"危机剑气", "只剩一颗心时挥剑发出剑气"},
-    };
     UI_LOCK();
     int selected = (int)sUi.techniqueSelection - 1;
     UI_UNLOCK();
@@ -2053,10 +2041,7 @@ static void PaintTechniqueSelection(const SSurf* s, const SecondScreenSnapshot* 
         if (selected != i) continue;
         Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, x, y, rect.w, rect.h, 1,
                                              Port_SecondScreenTheme_Color(SSC_MENU_RED));
-        DrawLabelPlate(s, 76, 205, s->w - 12, 236, SS_PLATE_DARK);
-        const int centerX = (76 + s->w - 12) / 2;
-        MenuTextCenteredFace(s, descriptions[bit][0], centerX, 213, 1, SS_TEXT_WHITE, SS_FACE_BODY);
-        MenuTextCenteredFace(s, descriptions[bit][1], centerX, 227, 1, SS_TEXT_WHITE, SS_FACE_BODY);
+        Port_SecondScreenQuest_DrawTechniqueScroll(s->px, s->w, s->h, s->stride, px, py, i);
     }
 }
 #endif
@@ -2079,7 +2064,8 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
 #ifdef TMC_3DS
             const bool techniques = questView == SS_QUEST_TECHNIQUES;
             if (techniques) PaintTechniqueSelection(s, snap, tl, px, py);
-            DrawMapChip(s, "返回", techniques ? 43 : s->w / 2.0f, s->h - 2 - 12 * u, u, chip);
+            /* The ROM title plaque ends at x=171 in its 240px canvas. */
+            DrawMapChipAt(s, "返回", rx1 - 65, ry0 + 4, u, chip);
 #else
             DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
 #endif

@@ -902,7 +902,13 @@ void sub_0805F820(WStruct* r0, u32* r1) {
     u32 temp4;
 
     if (r0->unk4 - r0->unk6 > 0) {
-        UnpackTextNibbles(r1, &gUnk_02036A58);
+#ifdef TMC_3DS
+        /* The lower-screen worker uses the same rasterizer as live dialogue. */
+        u8 unpacked[128];
+#else
+        u8* unpacked = &gUnk_02036A58;
+#endif
+        UnpackTextNibbles(r1, unpacked);
         if (r0->unk1 == 0) {
             u32 tmp = sub_0805F7A0(*r1);
             uVar6 = tmp & 0xf;
@@ -920,7 +926,7 @@ void sub_0805F820(WStruct* r0, u32* r1) {
             uVar3 = uVar4;
         }
 
-        puVar8 = &gUnk_02036A58 + uVar6;
+        puVar8 = unpacked + uVar6;
         buffer_loc = r0->unk8;
 #ifdef PC_PORT
         temp = GetTextColorTablePtr(r0->bgColor * TEXT_COLOR_TABLE_STRIDE + r0->charColor * 0x20);
@@ -1014,3 +1020,70 @@ u32 sub_0805F9A0(u32 r0) {
     }
     return (r0 & 0xff) + 0x800;
 }
+
+#ifdef TMC_3DS
+void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
+                             const u32* palette) {
+    extern const u8 gUnk_08129004[];
+    const u8* const font = gUnk_08129004;
+    /* The original ShowTextBox destination is in BG1. Reconstruct its origin,
+     * including the three-pixel vertical scroll, in the caller's buffer. */
+    const u32 cell = (Port_ReadU32(font) - 0x02021f30u) / 2;
+    x += (cell % 32) * 8;
+    y += (cell / 32) * 8 - 3;
+    const int textWidth = font[18];
+    if (textWidth == 0 || textWidth > 240 || font[20] > 7 || font[21] >= 14) return;
+    const u32 fill = sub_0805F8F8(font[20]);
+    u32 tiles[240 * 8 / sizeof(u32)];
+    /* These ROM messages don't use gameplay substitutions. Keep the token's
+     * inline variable sources independent of the game message system. */
+    static u8 emptyVariable[] = {0};
+    u8* variables[] = {emptyVariable, emptyVariable, emptyVariable, emptyVariable, emptyVariable};
+    Token token = {0};
+    sub_0805EEB4(&token, textIndex);
+    token._c = variables;
+    token.unk05 = font[23] & 3;
+    WStruct line = {0};
+    line.unk04 = font[23];
+    line.unk4 = textWidth;
+    line.unk8 = (void*)tiles;
+    line.charColor = font[21];
+    line.bgColor = font[20];
+
+    for (u32 chr = 1; chr != 0 && y < height; ) {
+        line.unk6 = 0;
+        for (size_t i = 0; i < ARRAY_COUNT(tiles); ++i) tiles[i] = fill;
+        int glyphs = 0;
+        while ((chr = GetCharacter(&token)) > 1) {
+            if (chr == 7 && token.param < 14) {
+                line.charColor = token.param;
+            } else if (chr == 0xb) {
+                line.unk1 = token.param;
+            } else if (chr == 0xc && line.unk6 + 8 <= line.unk4) {
+                line.unk6 += 8;
+                glyphs = 1;
+            } else if (chr > 0xe) {
+                sub_0805F7DC(chr, &line);
+                if (token.unk05 == 1 && line.unk6 > 1) --line.unk6;
+                glyphs = 1;
+            }
+        }
+        if (!glyphs) {
+            y += font[22] * 8;
+            continue;
+        }
+        const u8* bytes = (const u8*)tiles;
+        const int columns = (line.unk6 + 7) & ~7;
+        for (int dy = 0; dy < 16 && y + dy < height; ++dy) {
+            if (y + dy < 0) continue;
+            for (int dx = 0; dx < columns && x + dx < width; ++dx) {
+                if (x + dx < 0) continue;
+                const u8 packed = bytes[(dx / 8) * 64 + dy * 4 + (dx % 8) / 2];
+                const unsigned index = (packed >> (4 * (dx & 1))) & 15;
+                if (index) pixels[(y + dy) * stride + x + dx] = palette[index];
+            }
+        }
+        y += 16;
+    }
+}
+#endif

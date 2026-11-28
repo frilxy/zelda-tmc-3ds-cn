@@ -1,5 +1,13 @@
 # 更新日志（中文版）
 
+## v2.2.14
+
+- 剑技详情恢复原版卷轴、师傅头像、招式说明和印章。
+- 幸福碎片和剑技的返回按钮移到石板右上角。碎片和数量恢复原版位置，收集区圆槽图案连续显示。
+- 普通触控恢复按下即响应。点选道具后按实体 A／B／X／Y 绑定。
+- 地图总览去掉内层石框，右侧生命、卢比和钥匙居中。区域详情可拖动，按 B 返回总览。
+- 底部黑条显示当前位置或所选区域。室内楼层图上移，建筑名称移到底部。
+
 ## v2.2.13
 
 - 恢复幸福碎片和剑技详情的原版尺寸石板，标题放回石板预留的位置，保留底部返回按钮。
@@ -126,7 +134,7 @@
 
 ## Changelog
 
-- Restore the original detail slab size.
-- Align the three lower collection slots.
-- Tap to open or exit regional maps.
-- Drag to scroll; remove the zoom icon.
+- Restore original technique scrolls.
+- Move detail Back to the top right.
+- Bind items with physical A/B/X/Y.
+- Center HUD and show location names.

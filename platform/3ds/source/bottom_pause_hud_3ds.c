@@ -9,8 +9,9 @@
 enum {
     SCREEN_WIDTH = 320,
     SCREEN_HEIGHT = 240,
-    STATUS_CENTER_X = 265,
+    STATUS_CENTER_X = 261,
     HEART_SIZE = 8,
+    HEART_PITCH = 7,
     HEARTS_PER_ROW = 10,
     ITEM_SIZE = 16,
 };
@@ -45,7 +46,8 @@ static void DrawHearts(uint32_t* pixels, int stride, const SecondScreenSnapshot*
         const int first = i / HEARTS_PER_ROW * HEARTS_PER_ROW;
         const int remaining = hearts - first;
         const int rowSize = remaining < HEARTS_PER_ROW ? remaining : HEARTS_PER_ROW;
-        const int x = STATUS_CENTER_X - rowSize * HEART_SIZE / 2 + (i - first) * HEART_SIZE;
+        const int rowWidth = (rowSize - 1) * HEART_PITCH + HEART_SIZE;
+        const int x = STATUS_CENTER_X - rowWidth / 2 + (i - first) * HEART_PITCH;
         const int y = 77 + i / HEARTS_PER_ROW * (HEART_SIZE + 2);
         const int fill = quarters - i * 4;
         const int sprite = fill >= 4 ? SST_HEART_FULL : fill <= 0 ? SST_HEART_EMPTY : SST_HEART_EMPTY + fill;
@@ -75,7 +77,7 @@ void BottomPauseHud3DS_DrawStatus(uint32_t* pixels, int stride, const SecondScre
     const uint8_t keyFlags = SECOND_SCREEN_AR_IS_DUNGEON | SECOND_SCREEN_AR_HAS_KEYS;
     if ((snap->areaFlags & keyFlags) == keyFlags && snap->dungeonIdx < 0x10) {
         const uint32_t color = Port_SecondScreenTheme_Color(SSC_MENU_STONE_DARK);
-        for (int x = 234; x < 289; ++x) pixels[142 * stride + x] = color;
+        for (int x = STATUS_CENTER_X - 27; x < STATUS_CENTER_X + 28; ++x) pixels[142 * stride + x] = color;
         DrawStatusLabel(pixels, stride, "地牢钥匙", 154);
         DrawCounter(pixels, stride, 166, SST_KEY, snap->dungeonKeys, 2, 0);
     }

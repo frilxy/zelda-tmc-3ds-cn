@@ -3,6 +3,9 @@
 #include "item.h"
 #include "itemMetaData.h"
 #include "kinstone.h" /* KinstoneWorldEvent: a piece's OBJ palette and tile block */
+#ifdef TMC_3DS
+#include "message.h"
+#endif
 #include "subtask.h"  /* gUnk_08128D70: the sword techniques' own table */
 #include "port_rom.h"
 #include "port_second_screen_render.h"
@@ -288,8 +291,8 @@ static const uint16_t* ObjBank(const ObjSource* src, u32 bank) {
 /* One DrawDirect frame, tiles resolved out of the gfx groups the screen keeps
  * loaded. Piece format and attr2 math per RenderSpritePieces (port_draw.c);
  * pieces are drawn in reverse so the first (topmost OAM) wins overlaps. */
-static void DrawObjFrameFrom(const ObjSource* src, uint32_t* layer, int32_t canvasW, int32_t canvasH, u32 sprite,
-                             u32 frame, int32_t cmdX, int32_t cmdY, u32 oamExtra) {
+static void DrawObjFrameStrided(const ObjSource* src, uint32_t* layer, int32_t canvasW, int32_t canvasH,
+                                int32_t stride, u32 sprite, u32 frame, int32_t cmdX, int32_t cmdY, u32 oamExtra) {
     const u8* frameData = (const u8*)sub_080AD8F0(sprite, frame);
     u32 count, baseTile = oamExtra & 0x3FFu, basePal = (oamExtra >> 12) & 0xFu;
     int32_t i;
@@ -357,12 +360,17 @@ static void DrawObjFrameFrom(const ObjSource* src, uint32_t* layer, int32_t canv
                         if (dx < 0 || dy < 0 || dx >= canvasW || dy >= canvasH) {
                             continue;
                         }
-                        layer[(size_t)dy * (size_t)canvasW + (size_t)dx] = Rgb555ToRgba8888(pal[idx]);
+                        layer[(size_t)dy * (size_t)stride + (size_t)dx] = Rgb555ToRgba8888(pal[idx]);
                     }
                 }
             }
         }
     }
+}
+
+static void DrawObjFrameFrom(const ObjSource* src, uint32_t* layer, int32_t canvasW, int32_t canvasH,
+                             u32 sprite, u32 frame, int32_t cmdX, int32_t cmdY, u32 oamExtra) {
+    DrawObjFrameStrided(src, layer, canvasW, canvasH, canvasW, sprite, frame, cmdX, cmdY, oamExtra);
 }
 
 /* The quest screen's own load state, which is what nearly every call wants. */
@@ -1130,6 +1138,13 @@ unsigned Port_SecondScreenQuest_TechniqueBit(int index) {
         : PORT_QUEST_TECHNIQUE_COUNT;
 }
 
+static void LoadDetailPalette(uint16_t* palette, bool techniques) {
+    ApplyPaletteGroup(11u, palette);
+    ApplyPaletteGroup(12u, palette);
+    ApplyPaletteGroup(181u, palette);
+    ApplyPaletteGroup(techniques ? 205u : 204u, palette);
+}
+
 static bool DrawDetailBackdrop(uint32_t* pixels, int32_t stride, int32_t dstX, int32_t dstY,
                                bool techniques) {
     const u32 group = techniques ? 126u : 125u;
@@ -1139,10 +1154,7 @@ static bool DrawDetailBackdrop(uint32_t* pixels, int32_t stride, int32_t dstX, i
     if (map == NULL || tiles == NULL || mapLen < 32u * (QUEST_H / 8) * 2u) return false;
 
     uint16_t palette[256] = {0};
-    ApplyPaletteGroup(11u, palette);
-    ApplyPaletteGroup(12u, palette);
-    ApplyPaletteGroup(181u, palette);
-    ApplyPaletteGroup(techniques ? 205u : 204u, palette);
+    LoadDetailPalette(palette, techniques);
     uint32_t colors[256];
     for (unsigned i = 0; i < 256; ++i) colors[i] = Rgb555ToRgba8888(palette[i]);
 
@@ -1357,6 +1369,31 @@ int Port_SecondScreenQuest_DrawKinstones(uint32_t* pixels, int32_t bufW, int32_t
 #define TECHNIQUE_SPRITE (DRAW_DIRECT_SPRITE_INDEX + 1u)
 #define TECHNIQUE_SCROLL_FRAME 10u
 #define TECHNIQUE_OAM_EXTRA 0xC00u
+
+#ifdef TMC_3DS
+void Port_SecondScreenQuest_DrawTechniqueScroll(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                                int32_t px, int32_t py, int index) {
+    if (!pixels || stride < bufW || px < 0 || py < 0 || px + QUEST_W > bufW || py + QUEST_H > bufH ||
+        (unsigned)index >= PORT_QUEST_TECHNIQUE_COUNT) return;
+    const struct_gUnk_08128D70* technique = &gUnk_08128D70[index];
+    uint32_t* const stone = pixels + py * stride + px;
+    const u32 bank = (u32)technique->unk1 << 12;
+    /* Pause screen 8's original three OBJ commands. Draw back to front
+     * because the hardware gives the earlier OAM entries priority. */
+    DrawObjFrameStrided(&kTechSource, stone, QUEST_W, QUEST_H, stride, TECHNIQUE_SPRITE, 0x0c,
+                       0x78, 0x68, bank | 0x0c00u);
+    DrawObjFrameStrided(&kTechSource, stone, QUEST_W, QUEST_H, stride, TECHNIQUE_SPRITE, technique->frameIndex,
+                       0x30, 0x6c, bank | 0x0d80u);
+    DrawObjFrameStrided(&kTechSource, stone, QUEST_W, QUEST_H, stride, TECHNIQUE_SPRITE, 0x0b,
+                       0xcc, 0x88, 0x0c00u);
+
+    uint16_t palette[256] = {0};
+    uint32_t textColors[16];
+    LoadDetailPalette(palette, true);
+    for (int i = 0; i < 16; ++i) textColors[i] = Rgb555ToRgba8888(palette[0xf0 + i]);
+    Port_Text_DrawTechnique(stone, QUEST_W, QUEST_H, stride, 0, 0, technique->textIndex, textColors);
+}
+#endif
 
 static void TechniqueListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t idx, int32_t cx,
                               int32_t cy, int32_t side, int32_t scale, const void* ctx) {
