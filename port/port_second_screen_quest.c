@@ -618,10 +618,7 @@ enum {
     COMPACT_DIAMOND_X = 152, COMPACT_DIAMOND_Y = 71,
     COMPACT_DIAMOND_SRC_X = 123, COMPACT_DIAMOND_SRC_Y = 31,
     COMPACT_DIAMOND_WIDTH = 81,
-    COMPACT_DIAMOND_BODY_HEIGHT = 54,
     COMPACT_ROUND_GROUP_HEIGHT = 79,
-    COMPACT_PASSIVE_ROW_SHIFT = 2,
-    COMPACT_PASSIVE_CENTER_Y = 141,
     COMPACT_TRAY_WIDTH = 82,
     COMPACT_TRAY_X = COMPACT_DIAMOND_X + (COMPACT_DIAMOND_WIDTH - COMPACT_TRAY_WIDTH) / 2,
     COMPACT_TRAY_Y = 158,
@@ -646,8 +643,7 @@ SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id) {
         const u8* entry = SlotEntry(kCompactDiamondSlots[id - 4]);
         if (entry != NULL) {
             const int x = entry[6] - COMPACT_DIAMOND_SRC_X + COMPACT_DIAMOND_X;
-            const int y = id < 8 ? entry[7] - COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_Y
-                                 : COMPACT_PASSIVE_CENTER_Y;
+            const int y = entry[7] - COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_Y;
             return (SecondScreenQuestRect){x - 11, y - 11, 22, 22};
         }
     }
@@ -751,23 +747,16 @@ void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const S
     if (pixels == NULL || stride < COMPACT_WIDTH || snap == NULL) return;
     const bool ready = LoadCompactQuestArt();
     if (ready) {
-        const SecondScreenQuestRect diamond = {
-            COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, COMPACT_DIAMOND_WIDTH, COMPACT_DIAMOND_BODY_HEIGHT,
+        /* The diamond connector lines and all three lower circles are one
+         * piece of artwork. Copy their entire connected tilemap region. */
+        const SecondScreenQuestRect circles = {
+            COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, COMPACT_DIAMOND_WIDTH, COMPACT_ROUND_GROUP_HEIGHT,
         };
-        const SecondScreenQuestRect diamondSrc = {
-            COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, COMPACT_DIAMOND_WIDTH, COMPACT_DIAMOND_BODY_HEIGHT,
-        };
-        const SecondScreenQuestRect passiveRow = {
-            COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y + COMPACT_DIAMOND_BODY_HEIGHT + COMPACT_PASSIVE_ROW_SHIFT,
-            COMPACT_DIAMOND_WIDTH, COMPACT_ROUND_GROUP_HEIGHT - COMPACT_DIAMOND_BODY_HEIGHT,
-        };
-        const SecondScreenQuestRect passiveRowSrc = {
-            COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_BODY_HEIGHT,
-            passiveRow.w, passiveRow.h,
+        const SecondScreenQuestRect circlesSrc = {
+            COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, circles.w, circles.h,
         };
         const SecondScreenQuestRect traySrc = {COMPACT_TRAY_SRC_X, COMPACT_TRAY_SRC_Y, COMPACT_TRAY_WIDTH, 23};
-        DrawCompactQuestBg(pixels, stride, diamond, diamondSrc);
-        DrawCompactQuestBg(pixels, stride, passiveRow, passiveRowSrc);
+        DrawCompactQuestBg(pixels, stride, circles, circlesSrc);
         DrawCompactQuestBg(pixels, stride, kCompactTray, traySrc);
     } else {
         Port_SecondScreenTheme_DrawWell(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride,
@@ -1131,6 +1120,16 @@ typedef void (*ListCellFn)(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t
 #ifdef TMC_3DS
 /* Pause subpages 7 and 8 each load their own BG2 tiles and tilemap, just
  * like the main quest screen. Palette index zero lets parchment show through. */
+SecondScreenQuestRect Port_SecondScreenQuest_TechniqueRect(int index) {
+    return (SecondScreenQuestRect){12 + 27 * index, 35, 24, 24};
+}
+
+unsigned Port_SecondScreenQuest_TechniqueBit(int index) {
+    return (unsigned)index < PORT_QUEST_TECHNIQUE_COUNT
+        ? (unsigned)gUnk_08128D70[index].item - ITEM_SKILL_SPIN_ATTACK
+        : PORT_QUEST_TECHNIQUE_COUNT;
+}
+
 static bool DrawDetailBackdrop(uint32_t* pixels, int32_t stride, int32_t dstX, int32_t dstY,
                                bool techniques) {
     const u32 group = techniques ? 126u : 125u;
@@ -1181,11 +1180,13 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
 
     /* The bag has 11 native cells, four across on the first two rows. The
      * techniques page lines up its eight scrolls in one row at y=47. */
-    const int limit = techniques ? 8 : 11;
+    const int limit = techniques ? PORT_QUEST_TECHNIQUE_COUNT : 11;
     for (int i = 0; i < limit; ++i) {
-        const int side = techniques ? 24 : 32;
-        const int x = dstX + (techniques ? 12 + 27 * i : 27 + 48 * (i % 4));
-        const int y = dstY + (techniques ? 35 : 36 + 36 * (i / 4));
+        const SecondScreenQuestRect rect = techniques ? Port_SecondScreenQuest_TechniqueRect(i) :
+            (SecondScreenQuestRect){27 + 48 * (i % 4), 36 + 36 * (i / 4), 32, 32};
+        const int side = rect.w;
+        const int x = dstX + rect.x;
+        const int y = dstY + rect.y;
         if (!nativeArt) Port_SecondScreenTheme_DrawWell(pixels, bufW, bufH, stride, x, y, side, side, 1);
         if (i < count) fill(pixels, bufW, bufH, stride, i, x, y, side, 1, ctx);
     }
@@ -1259,6 +1260,9 @@ static int32_t KinstoneRowCount(const SecondScreenSnapshot* snap) {
 
 #define KINSTONE_PIECE_TILE_BYTES 512u
 #define KINSTONE_WORLD_EVENT_COUNT 119u
+#ifdef TMC_3DS
+extern const u8 gUnk_085C4620[]; /* the native packed quantity glyph pairs */
+#endif
 
 static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t idx, int32_t cx,
                              int32_t cy, int32_t side, int32_t scale, const void* ctx) {
@@ -1269,12 +1273,7 @@ static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32
      * here too, so nothing outlives the cell it was decoded for. */
     static u8 sPieceTiles[KINSTONE_PIECE_TILE_BYTES];
     ObjSource src = { kKinstoneVramGroups, (int)sizeof(kKinstoneVramGroups), 204u, NULL, 0u };
-    CellInk ink;
-    SecondScreenQuestRect frameRect;
-    u32 id = snap->kinstoneTypes[idx];
-    int32_t artW = side * 3 / 5; /* the piece left, its count right, as the game pairs them */
-    char buf[8];
-    int32_t tw;
+    const u32 id = snap->kinstoneTypes[idx];
 
     if (REGION_IS_EU) {
         events = gKinstoneWorldEvents_eu;
@@ -1298,6 +1297,26 @@ static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32
      * OBJ palette over the tiles it just streamed — the tile base it builds
      * is the VRAM slot it picked, which is tile 0 of that stream here. */
     memset(sCell, 0, sizeof(sCell));
+#ifdef TMC_3DS
+    /* Native pause screen uses (43 + 48*col, 52 + 36*row) for the piece
+     * and the same origin plus (16,9) for the quantity sprite. */
+    const unsigned quantity = snap->kinstoneAmounts[idx];
+    if (quantity) {
+        u8 digits[64];
+        const unsigned tens = quantity / 10 < 10 ? quantity / 10 : 9;
+        memcpy(digits, gUnk_085C4620 + tens * 32, 32);
+        memcpy(digits + 32, gUnk_085C4620 + (10 + quantity % 10) * 32, 32);
+        const ObjSource digitSource = {NULL, 0, 204u, digits, sizeof(digits)};
+        DrawObjFrameFrom(&digitSource, sCell, CELL_SRC, CELL_SRC, 0u, 5u,
+                         CELL_ORIGIN + 16, CELL_ORIGIN + 9, 0x3800u);
+    }
+    DrawObjFrameFrom(&src, sCell, CELL_SRC, CELL_SRC, 0u, 3u, CELL_ORIGIN, CELL_ORIGIN,
+                     ((u32)events[id].objPalette << 12) | 0x800u);
+    StampCell(pixels, bufW, bufH, stride, (CellInk){0, 0, CELL_SRC, CELL_SRC},
+              cx + 16 - CELL_ORIGIN, cy + 16 - CELL_ORIGIN, CELL_SRC, CELL_SRC);
+    (void)side;
+    (void)scale;
+#else
     DrawObjFrameFrom(&src, sCell, CELL_SRC, CELL_SRC, 0u, 3u, CELL_ORIGIN, CELL_ORIGIN,
                      ((u32)events[id].objPalette << 12) | 0x800u);
     /* Do not use CellBounds here.  A loose piece deliberately occupies only
@@ -1306,19 +1325,13 @@ static void KinstoneListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int32
      * piece 118's 15x24 ink was enlarged 5x and its authentic black outline
      * became the reported vertical "black block".  Scaling the retail OBJ
      * footprint keeps every piece the same size and makes that case 2x. */
-    frameRect = Port_SecondScreenQuest_KinstoneFrameRect(CELL_ORIGIN, CELL_ORIGIN);
-    ink.x = frameRect.x;
-    ink.y = frameRect.y;
-    ink.w = frameRect.w;
-    ink.h = frameRect.h;
-    StampCell(pixels, bufW, bufH, stride, ink, cx + 2 * scale, cy + 2 * scale, artW - 4 * scale, side - 4 * scale);
-
-    /* HUD-font digits, the same glyphs the ammo badges and the rupee counter
-     * use -- owner feedback: the body face read thin next to them. */
-    FormatCount(buf, sizeof(buf), (int32_t)snap->kinstoneAmounts[idx]);
-    tw = (int32_t)strlen(buf) * 8 * scale;
+    const SecondScreenQuestRect frameRect = Port_SecondScreenQuest_KinstoneFrameRect(CELL_ORIGIN, CELL_ORIGIN);
+    const CellInk ink = {frameRect.x, frameRect.y, frameRect.w, frameRect.h};
+    StampCell(pixels, bufW, bufH, stride, ink, cx + 2 * scale, cy + 2 * scale,
+              side * 3 / 5 - 4 * scale, side - 4 * scale);
     Port_SecondScreenTheme_DrawHudNumber(pixels, bufW, bufH, stride, cx + side - 2 * scale, cy + (side - 8 * scale) / 2,
                                          scale, (uint32_t)snap->kinstoneAmounts[idx], 1, 0);
+#endif
 }
 
 #ifdef PORT_SECOND_SCREEN_QUEST_TEST
@@ -1352,7 +1365,8 @@ static void TechniqueListCell(uint32_t* pixels, int32_t bufW, int32_t bufH, int3
 
     /* An unlearned technique keeps its well and shows nothing, which is what
      * the pause screen does with the scrolls Link hasn't been taught. */
-    if ((snap->swordSkillBits & (1u << idx)) == 0) {
+    const unsigned bit = (unsigned)gUnk_08128D70[idx].item - ITEM_SKILL_SPIN_ATTACK;
+    if (bit >= TECHNIQUE_COUNT || (snap->swordSkillBits & (1u << bit)) == 0) {
         return;
     }
     /* sub_080A617C's own row draw: one shared scroll frame, recoloured per

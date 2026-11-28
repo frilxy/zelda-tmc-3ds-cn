@@ -87,8 +87,32 @@ void Port_SecondScreen_3DS_ToggleInventory(void) {
     UI_UNLOCK();
 }
 
+bool Port_SecondScreen_3DS_BindSelectedItem(unsigned button) {
+    if (button >= 4) return false;
+    SecondScreenSnapshot snap;
+    Port_SecondScreenState_Read(&snap);
+    if (!snap.inGame || snap.introCinema) return false;
+    UI_LOCK();
+    const unsigned slot = (unsigned)sUi.liveItem - 1;
+    const bool selecting = sUi.tab == SS_TAB_ITEMS && sUi.questView == SS_QUEST_MAIN && !sUi.saveConfirm &&
+                           slot < SECOND_SCREEN_ITEM_SLOTS && snap.menuItems[slot] != 0;
+    if (selecting) {
+        sUi.liveItem = 0;
+        RequestRefresh();
+    }
+    UI_UNLOCK();
+    if (selecting) Port_SecondScreenState_RequestEquip(snap.menuItems[slot], button);
+    return selecting;
+}
+
+bool Port_SecondScreen_3DS_BackFromRegion(void) {
+    if (!Port_SecondScreen_3DS_InGame() || !Port_SecondScreen_3DS_ExitRegion()) return false;
+    RequestTouchRefresh();
+    return true;
+}
+
 bool Port_SecondScreen_3DS_BeginRegionDrag(int x, int y) {
-    return BottomFrameState3DS_CanDispatchTouch(&sFrameState, 1) &&
+    return BottomFrameState3DS_VisibleModeMatches(&sFrameState, 1) &&
            Port_SecondScreen_3DS_DragRegion(x, y, 0, 0);
 }
 

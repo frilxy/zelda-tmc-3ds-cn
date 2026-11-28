@@ -185,8 +185,6 @@ int Platform3DS_Init(void) {
     hidScanInput();
     sHeld = hidKeysHeld();
     sDown = hidKeysDown();
-    Port_SoftSlots_SetXyInput(((sHeld & KEY_X) != 0) | (((sHeld & KEY_Y) != 0) << 1),
-                              ((sDown & KEY_X) != 0) | (((sDown & KEY_Y) != 0) << 1));
     hidCircleRead(&sCirclePosition);
     if (sIsNew3DS) hidCstickRead(&sCStickPosition);
     return 1;
@@ -240,7 +238,10 @@ void Platform3DS_EnterGameplayDisplay(void) {
     sGameplayDisplayActive = true;
 }
 
+static uint32_t sBottomCapturedKeys;
+
 static uint16_t MapKeysToGba(uint32_t keys) {
+    keys &= ~sBottomCapturedKeys;
     enum {
         GBA_A = 1u << 0,
         GBA_B = 1u << 1,
@@ -596,32 +597,41 @@ static void PollInput(void) {
     }
     if (sDown & KEY_START) Port_SecondScreen_3DS_ToggleInventory();
     static int touchX, touchY, lastX, lastY;
-    static bool dragReady, dragged, touching;
+    static bool dragReady;
     if (sHeld & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
-        if (!touching) {
-            touching = true;
+        if (sDown & KEY_TOUCH) {
             touchX = lastX = touch.px;
             touchY = lastY = touch.py;
             dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
-            dragged = false;
+            if (!dragReady) Port_SecondScreen_3DS_OnTap(touchX, touchY, 0);
+        } else if (dragReady && (touch.px != lastX || touch.py != lastY)) {
+            dragReady = Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX,
+                                                      (int)touch.py - lastY);
+            lastX = touch.px;
+            lastY = touch.py;
         }
-        if (dragged || abs((int)touch.px - touchX) + abs((int)touch.py - touchY) >= 4) {
-            dragged = true;
-            /* The first contact may coincide with a map repaint. Wait for its
-             * hitboxes if necessary, without treating this gesture as a tap. */
-            if (!dragReady) dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
-            if (dragReady) {
-                Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX, (int)touch.py - lastY);
-                lastX = touch.px;
-                lastY = touch.py;
-            }
-        }
-    } else if (touching) {
-        touching = false;
-        if (!dragged) Port_SecondScreen_3DS_OnTap(touchX, touchY, 0);
+    } else {
+        dragReady = false;
     }
+
+    sBottomCapturedKeys &= sHeld;
+    if ((sDown & KEY_B) && Port_SecondScreen_3DS_BackFromRegion()) sBottomCapturedKeys |= KEY_B;
+    static const uint32_t itemKeys[] = {KEY_A, KEY_B, KEY_X, KEY_Y};
+    for (unsigned button = 0; button < sizeof(itemKeys) / sizeof(itemKeys[0]); ++button) {
+        const uint32_t key = itemKeys[button];
+        if ((sDown & key) && !(sBottomCapturedKeys & key) &&
+            !(key == KEY_A && (sHeld & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) &&
+            Port_SecondScreen_3DS_BindSelectedItem(button)) {
+            sBottomCapturedKeys |= key;
+            break;
+        }
+    }
+    const uint32_t itemHeld = sHeld & ~sBottomCapturedKeys;
+    const uint32_t itemDown = sDown & ~sBottomCapturedKeys;
+    Port_SoftSlots_SetXyInput(((itemHeld & KEY_X) != 0) | (((itemHeld & KEY_Y) != 0) << 1),
+                            ((itemDown & KEY_X) != 0) | (((itemDown & KEY_Y) != 0) << 1));
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
     sQuickDumpComboWasHeld = quickDumpCombo;

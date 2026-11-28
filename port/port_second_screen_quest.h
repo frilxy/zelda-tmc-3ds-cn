@@ -78,7 +78,10 @@ int Port_SecondScreenQuest_DrawTechniques(uint32_t* pixels, int32_t bufW, int32_
 #ifdef TMC_3DS
 /* Compact 320x240 pause-menu block. Called on the 3DS main thread after
  * the shared theme has initialized. The caller supplies the surrounding UI. */
-enum { PORT_QUEST_COMPACT_COUNT = 12 };
+enum { PORT_QUEST_COMPACT_COUNT = 12, PORT_QUEST_TECHNIQUE_COUNT = 8 };
+/* Native coordinates relative to the 240×160 detail stone. */
+SecondScreenQuestRect Port_SecondScreenQuest_TechniqueRect(int index);
+unsigned Port_SecondScreenQuest_TechniqueBit(int index);
 SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id);
 void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap);
 #endif
