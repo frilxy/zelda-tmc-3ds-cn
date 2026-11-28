@@ -235,3 +235,36 @@ void TryLoadPrologueHyruleTown(void) {
         }
     }
 }
+
+#ifdef PC_PORT
+/* port/port_zone_tiles.c: every zone's graphics at once, for a view wider than the GBA's that
+ * can show two zones. Slot n (VRAM 0x1000 * n and 0x8000 + 0x1000 * n) takes groups 2n and
+ * 2n + 1 from its zone table; a group's two 0x1000-byte copies as HyruleTownTileSetManager_LoadGfxGroup
+ * makes them. */
+const u16* Port_HyruleTownZoneRegions(u32 slot) {
+    static const u16* const kRegions[3] = { gHyruleTownTileSetManager_regions0, gHyruleTownTileSetManager_regions1,
+                                            gHyruleTownTileSetManager_regions2 };
+    static const u16* const kFestival[3] = { gHyruleTownTileSetManager_festivalRegions0,
+                                             gHyruleTownTileSetManager_festivalRegions1,
+                                             gHyruleTownTileSetManager_festivalRegions2 };
+    if (slot >= 3) return NULL;
+    return gRoomControls.area == AREA_FESTIVAL_TOWN ? kFestival[slot] : kRegions[slot];
+}
+
+void Port_HyruleTownZoneGfx(u32 group, const u8** src1, u32* dest1, const u8** src2, u32* dest2) {
+    const HyruleTownTileSetManagerGfxInfo* gfxInfo;
+    u32 base;
+    if (gRoomControls.area != AREA_FESTIVAL_TOWN) {
+        gfxInfo = &gHyruleTownTileSetManagerGfxInfos[group];
+        base = offset_gUnk_086D4460;
+    } else {
+        gfxInfo = &gHyruleTownTileSetManagerGfxInfosFestival[group];
+        base = offset_gUnk_086E8460;
+    }
+    const u32 adj = Port_RemapGfxOffset(base) - base;
+    *src1 = &gGlobalGfxAndPalettes[gfxInfo->gfx1 + adj];
+    *dest1 = (u32)(uintptr_t)gfxInfo->dest1;
+    *src2 = &gGlobalGfxAndPalettes[gfxInfo->gfx2 + adj];
+    *dest2 = (u32)(uintptr_t)gfxInfo->dest2;
+}
+#endif

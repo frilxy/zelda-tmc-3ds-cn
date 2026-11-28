@@ -86,6 +86,9 @@ void UpdateScroll(void) {
         Scroll0, Scroll1, Scroll2, NULL, Scroll4, Scroll5,
     };
 
+#ifdef PC_PORT
+    Port_Widescreen_PrepareGameplayCamera();
+#endif
     gRoomControls.scroll_flags &= 0xfb;
     gUnk_0811E768[gRoomControls.scrollAction](&gRoomControls);
 }
@@ -127,6 +130,15 @@ void Scroll1(RoomControls* controls) {
         targetValue = Port_Widescreen_CameraRestX(controls->camera_target->x.HALF.HI);
 #else
         targetValue = controls->camera_target->x.HALF.HI - 0x78;
+#endif
+#if MODE1_GBA_WIDTH > 240
+        if (targetValue < controls->origin_x) {
+            /* Room narrower than the Full View: the camera rests outside it, centred. */
+            if (controls->scroll_x != targetValue) {
+                controls->scroll_x = targetValue;
+                gUpdateVisibleTiles = 1;
+            }
+        }
 #endif
         diff = controls->scroll_x - targetValue;
         if (diff != 0) {
@@ -176,6 +188,14 @@ void Scroll1(RoomControls* controls) {
         targetValue = Port_Widescreen_CameraRestY(controls->camera_target->y.HALF.HI);
 #else
         targetValue = controls->camera_target->y.HALF.HI - 0x50;
+#endif
+#if MODE1_GBA_WIDTH > 240
+        if (targetValue < controls->origin_y) {
+            if (controls->scroll_y != targetValue) {
+                controls->scroll_y = targetValue;
+                gUpdateVisibleTiles = 1;
+            }
+        }
 #endif
         diff = controls->scroll_y - (targetValue);
         if (diff != 0) {

@@ -12,7 +12,22 @@ extern "C" {
 #endif
 
 bool Port_SecondScreen_3DS_UpdateOpen(void);
-bool Port_SecondScreen_3DS_PaintUpdateTop(uint32_t* pixels, int stride);
+
+/* Settings entered from either live gameplay or the title screen. */
+void Port_SecondScreen_3DS_OpenSettings(void);
+void Port_SecondScreen_3DS_CloseSettings(void);
+void Port_SecondScreen_3DS_DrawPauseTitle(uint32_t* pixels, int stride, const char* title);
+typedef enum {
+    SS_PAUSE_ICON_SAVE,
+    SS_PAUSE_ICON_SETTINGS,
+    SS_PAUSE_ICON_BACK,
+} SecondScreenPauseIcon3DS;
+void Port_SecondScreen_3DS_DrawPauseButton(uint32_t* pixels, int stride, int x, int y, int width, int height,
+                                           SecondScreenPauseIcon3DS icon);
+void Port_SecondScreen_3DS_DrawCombinedCollection(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap);
+/* IDs: bag/heart/skills/shells (0–3), diamond left/top/right/bottom (4–7),
+ * passive gear left to right (8–10), carried quest-item tray (11). */
+bool Port_SecondScreen_3DS_CombinedCollectionRect(int id, int* x, int* y, int* width, int* height);
 
 uint32_t Port_SecondScreen_3DS_PaintInto(uint32_t* pixels, int width, int height, int strideInPixels,
                                         const SecondScreenSnapshot* snap, uint32_t tick);
@@ -21,6 +36,14 @@ uint32_t Port_SecondScreen_3DS_RequestRefresh(void);
 void Port_SecondScreen_3DS_MarkSubmitted(uint32_t generation, int inGame);
 void Port_SecondScreen_3DS_PromoteSubmitted(void);
 void Port_SecondScreen_3DS_GetFrameStats(BottomFrameState3DSStats* out);
+bool Port_SecondScreen_3DS_InGame(void);
+void Port_SecondScreen_3DS_ToggleInventory(void);
+bool Port_SecondScreen_3DS_BindSelectedItem(unsigned button);
+bool Port_SecondScreen_3DS_ExitRegion(void);
+bool Port_SecondScreen_3DS_BackFromRegion(void);
+bool Port_SecondScreen_3DS_BeginRegionDrag(int x, int y);
+bool Port_SecondScreen_3DS_DragRegion(int x, int y, int dx, int dy);
+bool Port_SecondScreen_3DS_HasDeferredTap(void);
 void Port_SecondScreen_3DS_OnTap(int x, int y, int longPress);
 int Port_SecondScreen_3DS_NeedsRefresh(void);
 /* `tick` is the free-running animation tick, `paintedTick` the tick the last

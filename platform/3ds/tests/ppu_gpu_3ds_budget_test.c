@@ -17,7 +17,7 @@ int main(void) {
     batches[3] = (PpuGpu3DSBatch){ .layer = PPU_GPU3DS_OBJ, .objWindow = true, .indexCount = 6 };
     batches[4] = (PpuGpu3DSBatch){ .layer = PPU_GPU3DS_OBJ, .indexCount = 0 };
     size_t required = PpuGpu3DS_CommandWordsRequired(&commands);
-    assert(required == fixed + 4 * PPU_GPU3DS_WORDS_PER_DRAW);
+    assert(required == fixed + 5 * PPU_GPU3DS_WORDS_PER_DRAW);
     assert(PpuGpu3DS_CommandBudgetFits(required, true, required, 0));
     assert(!PpuGpu3DS_CommandBudgetFits(required, true, required, 1));
     assert(PpuGpu3DS_CommandBudgetFits(required, true, required + 7, 7));

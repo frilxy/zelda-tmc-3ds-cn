@@ -142,6 +142,12 @@ int Port_SecondScreenWorldMap_DrawMarker(uint32_t* pixels, int32_t bufW, int32_t
  * hand DrawRegion, and (x0,y0)-(x1,y1) is the tile's rect in world-map
  * pixels so callers can outline it like the game's cursor brackets.
  * Returns 1 on a real tile, 0 off-grid or while data isn't ready. */
+#ifdef TMC_3DS
+/* Windcrest message IDs selected by the original game metadata. */
+unsigned Port_SecondScreenWorldMap_GetAreaNameText(uint8_t area);
+unsigned Port_SecondScreenWorldMap_GetRegionNameText(int32_t region);
+#endif
+
 int Port_SecondScreenWorldMap_GetRegionAt(int32_t mapX, int32_t mapY, int32_t* outRegion,
                                           int32_t* outX0, int32_t* outY0, int32_t* outX1,
                                           int32_t* outY1);

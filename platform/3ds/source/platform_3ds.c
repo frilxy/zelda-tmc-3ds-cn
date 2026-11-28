@@ -1,3 +1,5 @@
+#include "port_softslots.h"
+#include "fade_gpu_3ds.h"
 #include "platform_3ds.h"
 #include "updater.h"
 #include "old3ds_frame_pacer.h"
@@ -8,20 +10,12 @@
 
 #include <3ds.h>
 
-#include "bottom_idle_3ds.h"
-
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* Boot-screen console state and hooks (defined further down). */
-static PrintConsole* sBootConsole;
-static int sBootCol;
-static int sBootRow;
-
-static void BootPaintBottomCard(void);
-static bool BootConsolePrint(void* console, int character);
+static void SilenceLogSink(void);
 
 static uint32_t sHeld;
 static uint32_t sDown;
@@ -100,6 +94,7 @@ static void OnAptEvent(APT_HookType hook, void* parameter) {
              * mark is consumed at the next logic boundary, so suspend and
              * restore callbacks before that boundary coalesce into one resync. */
             Platform3DS_MarkFrameDiscontinuity(OLD3DS_FRAME_PACER_DISCONTINUITY_APT);
+            if (hook == APTHOOK_ONSUSPEND || hook == APTHOOK_ONSLEEP) PlatformGpu3DS_DrainQueue();
             PlatformGpu3DS_InvalidateBottomTarget();
             break;
         default:
@@ -149,15 +144,8 @@ int Platform3DS_Init(void) {
     gfxSet3D(false);
     cfguInit();
     romfsInit();
-    /* Boot screen: the splash art fills the bottom panel and the boot log
-     * lettering is drawn straight over it in white -- no character cells, no
-     * background fill. consoleInit() still owns layout, line feeds and any
-     * escape sequences; only the glyph painting is ours (see BootConsolePrint). */
-    sBootConsole = consoleInit(GFX_BOTTOM, NULL);
-    if (sBootConsole != NULL) {
-        BootPaintBottomCard();
-        sBootConsole->PrintChar = BootConsolePrint;
-    }
+    consoleInit(GFX_BOTTOM, NULL);
+    SilenceLogSink();
 
     aptSetHomeAllowed(true);
     aptSetSleepAllowed(true);
@@ -227,172 +215,15 @@ void Platform3DS_SetTurboMultiplier(unsigned multiplier) {
     sTurboMultiplier = multiplier < 2 ? 2 : (multiplier > 5 ? 5 : multiplier);
 }
 
-/* ---- Boot screen -------------------------------------------------------
- *
- * The bottom panel shows the same splash art as the top one and the boot log
- * is lettered over it in white. libctru's console paints an opaque 8x8 cell
- * per character (glyph + background), which is exactly what we do not want
- * here, so the console gets a PrintChar callback: it then routes every
- * character through BootConsolePrint() and skips its own tile drawing.
- *
- * The framebuffer is column major -- index = column * 240 + (239 - row) --
- * which is the layout consoleDrawChar() itself uses.
- */
-#define BOOT_SCREEN_W 320
-#define BOOT_SCREEN_H 240
-#define BOOT_CELL 8
-/* The idle card draws its own gold frame ~12 px in from the edge, so the boot
- * log stays inside it instead of colliding with the border. */
-#define BOOT_INSET 12
-#define BOOT_COLS ((BOOT_SCREEN_W - 2 * BOOT_INSET) / BOOT_CELL)
-#define BOOT_ROWS ((BOOT_SCREEN_H - 2 * BOOT_INSET) / BOOT_CELL)
-
-
-static void BootPutPixel(int col, int row, uint16_t rgb565) {
-    uint16_t* fb = sBootConsole != NULL ? sBootConsole->frameBuffer : NULL;
-    if (fb == NULL || col < 0 || col >= BOOT_SCREEN_W || row < 0 || row >= BOOT_SCREEN_H) {
-        return;
-    }
-    fb[(size_t)col * 240u + (size_t)(239 - row)] = rgb565;
-}
-
-/* The bottom panel shows the same procedural Triforce card the port uses
- * while the game sits on its title/file-select tasks -- not a bitmap, so it
- * stays crisp at 320x240 and needs no asset. */
-static void BootPaintBottomCard(void) {
-    static uint32_t card[BOOT_SCREEN_W * BOOT_SCREEN_H];
-    int x, y;
-    if (sBootConsole == NULL) {
-        return;
-    }
-    BottomIdle3DS_Paint(card, BOOT_SCREEN_W, BOOT_SCREEN_H, BOOT_SCREEN_W, 0u, false);
-    for (y = 0; y < BOOT_SCREEN_H; ++y) {
-        const uint32_t* row = card + (size_t)y * BOOT_SCREEN_W;
-        for (x = 0; x < BOOT_SCREEN_W; ++x) {
-            const uint32_t px = row[x];
-            /* RGB565: red in bits 11..15, green 5..10, blue 0..4. The idle
-             * buffer is RGBA with red in the low byte, so red must be shifted
-             * UP and blue DOWN -- swapping them turned the gold card blue. */
-            const uint16_t rgb = (uint16_t)((((px & 0xF8u) << 8)) | (((px >> 8) & 0xFCu) << 3) |
-                                            (((px >> 16) & 0xF8u) >> 3));
-            BootPutPixel(x, y, rgb);
-        }
-    }
-    gfxFlushBuffers();
-}
-
-/* Draws one glyph in white, pixels only -- no cell background. */
-static void BootPutGlyph(int character) {
-    const int index = character - sBootConsole->font.asciiOffset;
-    const uint8_t* glyph;
-    int i, j;
-    if (index < 0 || index >= sBootConsole->font.numChars) {
-        return;
-    }
-    glyph = sBootConsole->font.gfx + (size_t)index * 8u;
-    /* libctru's own order (consoleDrawChar): byte 7-j is the row 7-j, bottom
-     * up, and bit 0x80>>i is column i. Getting these two swapped rotated every
-     * glyph and made the boot log unreadable. */
-    for (j = 0; j < 8; ++j) {
-        const uint8_t bits = glyph[7 - j];
-        const int row = BOOT_INSET + sBootRow * BOOT_CELL + (7 - j);
-        for (i = 0; i < 8; ++i) {
-            if (bits & (0x80u >> i)) {
-                BootPutPixel(BOOT_INSET + sBootCol * BOOT_CELL + i, row, 0xFFFFu);
-            }
-        }
-    }
-}
-
-static bool BootConsolePrint(void* console, int character) {
-    PrintConsole* con = (PrintConsole*)console;
-    const int cols = BOOT_COLS;
-    (void)con;
-    switch (character) {
-        case '\r':
-            sBootCol = 0;
-            gfxFlushBuffers();
-            break;
-        case '\n':
-            sBootCol = 0;
-            if (sBootRow + 1 < BOOT_ROWS) {
-                ++sBootRow;
-            } else {
-                /* Page flip instead of overprinting: once the last row is
-                 * used, redraw the card and start again from the top. Before
-                 * this the row stopped advancing and every later character
-                 * landed on the same line, which read as garbage. */
-                BootPaintBottomCard();
-                sBootRow = 0;
-            }
-            gfxFlushBuffers();
-            break;
-        case '\t':
-            sBootCol = (sBootCol + 4) & ~3;
-            break;
-        case '\b':
-            if (sBootCol > 0) --sBootCol;
-            break;
-        default:
-            if (sBootCol >= cols) {
-                sBootCol = 0;
-                if (sBootRow + 1 < BOOT_ROWS) {
-                    ++sBootRow;
-                } else {
-                    BootPaintBottomCard();
-                    sBootRow = 0;
-                }
-            }
-            BootPutGlyph(character);
-            ++sBootCol;
-            break;
-    }
-    return true;
-}
-
-void Platform3DS_ShowSplash(void) {
-    FILE* file = fopen("romfs:/splash.rgb565", "rb");
-    uint16_t* pixels = NULL;
-    if (file) {
-        pixels = (uint16_t*)malloc(400u * 240u * sizeof(uint16_t));
-        if (!pixels || fread(pixels, sizeof(uint16_t), 400u * 240u, file) != 400u * 240u) {
-            free(pixels);
-            pixels = NULL;
-        }
-        fclose(file);
-    }
-    if (!pixels) return;
-
-    uint16_t width = 0;
-    uint16_t height = 0;
-    uint16_t* top = (uint16_t*)gfxGetFramebuffer(GFX_TOP, GFX_LEFT, &width, &height);
-    if (top) {
-        for (int y = 0; y < 240; ++y) {
-            for (int x = 0; x < 400; ++x) {
-                top[(239 - y) + x * 240] = pixels[y * 400 + x];
-            }
-        }
-        gfxFlushBuffers();
-        gfxSwapBuffers();
-        gspWaitForVBlank();
-        svcSleepThread(1200000000LL);
-    }
-    free(pixels);
-}
-
 static bool GameplayLogSinkPrint(void* console, int character) {
     (void)console;
     (void)character;
     return true;
 }
 
-void Platform3DS_EnterGameplayDisplay(void) {
-    if (sGameplayDisplayActive) return;
-
-    /* Keep the visible console throughout boot, then prevent stdout from ever
-     * writing into the bottom framebuffer owned by Citro3D. stderr remains
-     * available to an attached debugger through SVC instead of being painted
-     * over the live map/touch UI. */
+/* Keep the boot animation and Citro3D framebuffer clear of console output.
+ * stderr remains available to an attached debugger through SVC. */
+static void SilenceLogSink(void) {
     fflush(stdout);
     fflush(stderr);
     sGameplayLogSink = *consoleGetDefault();
@@ -401,10 +232,16 @@ void Platform3DS_EnterGameplayDisplay(void) {
     sGameplayLogSink.consoleInitialised = true;
     consoleSelect(&sGameplayLogSink);
     consoleDebugInit(debugDevice_SVC);
+}
+
+void Platform3DS_EnterGameplayDisplay(void) {
     sGameplayDisplayActive = true;
 }
 
+static uint32_t sBottomCapturedKeys;
+
 static uint16_t MapKeysToGba(uint32_t keys) {
+    keys &= ~sBottomCapturedKeys;
     enum {
         GBA_A = 1u << 0,
         GBA_B = 1u << 1,
@@ -422,7 +259,7 @@ static uint16_t MapKeysToGba(uint32_t keys) {
     if ((keys & KEY_A) && !quickDumpCombo) input &= ~GBA_A;
     if (keys & KEY_B) input &= ~GBA_B;
     if (keys & KEY_SELECT) input &= ~GBA_SELECT;
-    if (keys & KEY_START) input &= ~GBA_START;
+    if ((keys & KEY_START) && !Port_SecondScreen_3DS_InGame()) input &= ~GBA_START;
     if (keys & (KEY_DRIGHT | KEY_CPAD_RIGHT)) input &= ~GBA_RIGHT;
     if (keys & (KEY_DLEFT | KEY_CPAD_LEFT)) input &= ~GBA_LEFT;
     if (keys & (KEY_DUP | KEY_CPAD_UP)) input &= ~GBA_UP;
@@ -507,7 +344,11 @@ int Platform3DS_IsActiveStackAddress(uintptr_t value) {
     return value >= currentSp - window && value <= currentSp + window;
 }
 
+uint64_t Platform3DS_LogicFrameCount(void) { return sLogicFrames; }
+uint64_t Platform3DS_EngineWorkTotalTicks(void) { return sEngineWorkTicks; }
+
 bool Platform3DS_BeginFrameBoundary(void) {
+    FadeGpu3DS_OnFrameBoundary();
     const uint64_t now = svcGetSystemTick();
     if (sFrameBoundaryEndTick != 0) {
         sEngineWorkLastTicks = now - sFrameBoundaryEndTick;
@@ -754,11 +595,43 @@ static void PollInput(void) {
         memset(&sCStickPosition, 0, sizeof(sCStickPosition));
         sCStickHeld = false;
     }
-    if (sDown & KEY_TOUCH) {
+    if (sDown & KEY_START) Port_SecondScreen_3DS_ToggleInventory();
+    static int touchX, touchY, lastX, lastY;
+    static bool dragReady;
+    if (sHeld & KEY_TOUCH) {
         touchPosition touch;
         hidTouchRead(&touch);
-        Port_SecondScreen_3DS_OnTap(touch.px, touch.py, 0);
+        if (sDown & KEY_TOUCH) {
+            touchX = lastX = touch.px;
+            touchY = lastY = touch.py;
+            dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
+            if (!dragReady) Port_SecondScreen_3DS_OnTap(touchX, touchY, 0);
+        } else if (dragReady && (touch.px != lastX || touch.py != lastY)) {
+            dragReady = Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX,
+                                                      (int)touch.py - lastY);
+            lastX = touch.px;
+            lastY = touch.py;
+        }
+    } else {
+        dragReady = false;
     }
+
+    sBottomCapturedKeys &= sHeld;
+    if ((sDown & KEY_B) && Port_SecondScreen_3DS_BackFromRegion()) sBottomCapturedKeys |= KEY_B;
+    static const uint32_t itemKeys[] = {KEY_A, KEY_B, KEY_X, KEY_Y};
+    for (unsigned button = 0; button < sizeof(itemKeys) / sizeof(itemKeys[0]); ++button) {
+        const uint32_t key = itemKeys[button];
+        if ((sDown & key) && !(sBottomCapturedKeys & key) &&
+            !(key == KEY_A && (sHeld & (KEY_L | KEY_R)) == (KEY_L | KEY_R)) &&
+            Port_SecondScreen_3DS_BindSelectedItem(button)) {
+            sBottomCapturedKeys |= key;
+            break;
+        }
+    }
+    const uint32_t itemHeld = sHeld & ~sBottomCapturedKeys;
+    const uint32_t itemDown = sDown & ~sBottomCapturedKeys;
+    Port_SoftSlots_SetXyInput(((itemHeld & KEY_X) != 0) | (((itemHeld & KEY_Y) != 0) << 1),
+                            ((itemDown & KEY_X) != 0) | (((itemDown & KEY_Y) != 0) << 1));
     const bool quickDumpCombo = (sHeld & (KEY_L | KEY_R | KEY_A)) == (KEY_L | KEY_R | KEY_A);
     if (quickDumpCombo && !sQuickDumpComboWasHeld) sQuickDumpRequested = true;
     sQuickDumpComboWasHeld = quickDumpCombo;

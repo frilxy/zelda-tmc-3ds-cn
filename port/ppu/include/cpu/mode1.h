@@ -68,14 +68,20 @@ enum {
     MODE1_OAM_HALFWORDS = 512
 };
 
-/* Packed shadow rows extend the native tilemap into the widescreen reveal.
- * Wider desktop builds reserve enough columns for their configured capacity. */
+/* Widescreen Option A — port-side shadow tilemap for 32-tile BGs. The E2
+ * 266-wide path needs exactly seven packed columns per row: four visible
+ * reveal tiles plus three cells of scroll/wrap headroom. Full View starts at
+ * x=0 and therefore needs the complete 400px span plus the same headroom.
+ *
+ * MODE1_WS_SHADOW_COLS is storage capacity for the configured build. Runtime
+ * rows use the per-BG cols/stride below, so a 400x240-capable binary keeps the
+ * Old/normal-Wide hot footprint at the E2 32*7 cells instead of walking 32*54
+ * cells whenever Full View is disabled. */
 #define MODE1_WS_SHADOW_ROWS 32
 #define MODE1_WS_SHADOW_WIDE_COLS 7
-/* Retain the established storage ABI in wide-capacity builds. Production
- * normal-Wide shadows still publish packed seven-column rows. */
+#define MODE1_WS_SHADOW_FULL_VIEW_COLS ((400 / 8) + 4)
 #if MODE1_GBA_WIDTH >= 400
-#define MODE1_WS_SHADOW_COLS ((400 / 8) + 4)
+#define MODE1_WS_SHADOW_COLS MODE1_WS_SHADOW_FULL_VIEW_COLS
 #else
 #define MODE1_WS_SHADOW_COLS MODE1_WS_SHADOW_WIDE_COLS
 #endif
@@ -83,8 +89,25 @@ extern uint16_t* virtuappu_mode1_ws_shadow[MODE1_GBA_BG_COUNT];
 extern int virtuappu_mode1_ws_shadow_base_tile[MODE1_GBA_BG_COUNT];
 extern uint8_t virtuappu_mode1_ws_shadow_cols[MODE1_GBA_BG_COUNT];
 extern uint8_t virtuappu_mode1_ws_shadow_stride[MODE1_GBA_BG_COUNT];
+extern int virtuappu_mode1_ws_full_view;
+extern bool virtuappu_mode1_bg3_hdma_native_bounds;
+/* BG3HOFS as the game wrote it for the frame, before any HBlank DMA step.
+ * In native bounds an HDMA effect (Vaati appearing) is authored so its image is
+ * at HOFS ~ 0 on the native screen; game code computes the register from
+ * gRoomControls.scroll_x, which the wide camera has moved, so the register and
+ * the table lines built from it sit a camera offset away from 0. Lines within
+ * a few pixels of that base are effect lines and are sampled with the base
+ * taken off; the lines that are not (a static frame of the effect, 0) are not. */
+extern int virtuappu_mode1_bg3_hofs_base;
 /* Repeat a known seamless BG3 overlay beyond the native 240px canvas. */
 extern bool virtuappu_mode1_bg3_repeat;
+/* BGs (bit n = BGn) repeated across the whole view: a scene's 256-wide picture or
+ * overlay drawn in a wider view (the portal cutscene's BG1, the title's light rays). */
+extern uint8_t virtuappu_mode1_bg_repeat_mask;
+/* A picture drawn as part of BG1 over BG1's own tiles (ABGR, frame_width x frame_height,
+ * row-major, 0 = none: BG1's tile shows), at BG1's priority and blending: the title's forest
+ * extended around the game's (Port_Widescreen_TitleWide). NULL: BG1 as the game has it. */
+extern const uint32_t* virtuappu_mode1_bg1_picture;
 
 /* Staged alongside the engine OAM mirror, then committed with its VBlank DMA.
  * Raw OAM Y=160..239 is otherwise ambiguous in a 240-line viewport. */
@@ -96,6 +119,17 @@ extern uint8_t virtuappu_mode1_obj_y_negative_staged[MODE1_GBA_OAM_COUNT];
 extern uint8_t virtuappu_mode1_obj_clip_mark_staged[MODE1_GBA_OAM_COUNT];
 extern int virtuappu_mode1_obj_clip_y_staged;
 extern int virtuappu_mode1_obj_clip_enable_staged;
+/* Each OAM entry's stereo 3D depth, quarter pixels (what Link holds up or has thrown). */
+extern uint8_t virtuappu_mode1_obj_depth[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_depth_staged[MODE1_GBA_OAM_COUNT];
+/* The same at the top edge of each OAM entry: a tall sprite's pieces lean out, so the depth rises from the entry's
+ * bottom row (obj_depth) to its top (obj_depth_top), tile row by tile row. Equal: the entry stays flat. */
+extern uint8_t virtuappu_mode1_obj_depth_top[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_depth_top_staged[MODE1_GBA_OAM_COUNT];
+/* Which entity wrote each OAM entry (0: none of its own): the entries of one entity are one object for the 3D depth
+ * they take from what they rest on. */
+extern uint8_t virtuappu_mode1_obj_group[MODE1_GBA_OAM_COUNT];
+extern uint8_t virtuappu_mode1_obj_group_staged[MODE1_GBA_OAM_COUNT];
 void virtuappu_mode1_commit_obj_metadata(void);
 
 /* Runtime WIP widescreen HUD anchor. BG0 stays 32 tiles wide, but gameplay
@@ -105,6 +139,16 @@ void virtuappu_mode1_commit_obj_metadata(void);
  * instead of in the middle of the revealed world. */
 #define MODE1_WS_HUD_RIGHT_NATIVE_X 176
 extern int virtuappu_mode1_ws_hud_right_anchor;
+/* Where the band starts this frame: MODE1_WS_HUD_RIGHT_NATIVE_X, or a column earlier (168) in the 3DS's Full View,
+ * whose rupees show the wallet's size too (src/ui.c, DrawRupees). Both renderers read it. */
+extern int virtuappu_mode1_ws_hud_right_native_x;
+
+/* WIN0 in view pixels for a view wider or taller than the GBA's, one
+ * {left, right} pair per output line (left == right: empty), or NULL. WIN0H is
+ * 8 bits and the game's HBlank table has 160 lines, so the port draws its iris
+ * fade (src/fade.c) from this table instead (Port_Widescreen_Win0Lines). It
+ * replaces WIN0H and WIN0V; WININ/WINOUT and the enable bit still apply. */
+extern const uint16_t* virtuappu_mode1_ws_win0_lines;
 
 /* Runtime WIP widescreen message-box centering. The engine composes the
  * textbox on BG0 for a 240-px canvas (default box: tiles 1..27). On a wide

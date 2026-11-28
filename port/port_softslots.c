@@ -30,6 +30,10 @@
 
 #include "port_softslots.h"
 #include "port_runtime_config.h"
+#ifdef TMC_3DS
+#include "save.h"
+#include "item_ids.h"
+#endif
 
 #ifndef TMC_3DS
 #include <SDL3/SDL.h>
@@ -50,11 +54,27 @@ struct PortSoftSlotItemMeta { unsigned char menuSlot; unsigned char rest[7]; };
 extern const struct PortSoftSlotItemMeta gItemMetaData[];
 
 #define SOFTSLOT_FILENAME "tmc.softslots"
+#ifndef TMC_3DS
 static const char SOFTSLOT_MAGIC[6] = { 'T', 'M', 'C', 'S', 'S', '1' };
 
 static uint8_t sAssignments[PORT_SOFTSLOT_COUNT];
-static int sActiveSlot = -1;
 static bool sLoaded = false;
+#else
+/* Map stable assignments into an unused part of each EEPROM slot. The
+ * normal EEPROM transaction owns durability, copying and profile selection. */
+static const uint8_t kXyMagic[] = {'T', 'M', 'X', '1'};
+enum { XY_RECORD_SIZE = sizeof(kXyMagic) + 2 };
+static_assert(offsetof(SaveFile, filler4ac) == 0x4ac, "X/Y record offset changed");
+static_assert(sizeof(gSave.filler4ac) >= XY_RECORD_SIZE, "X/Y record exceeds filler");
+static bool OwnsXyItem(uint8_t item) {
+    return item > ITEM_NONE && item <= ITEM_BOTTLE4 &&
+           GetInventoryValue(item == ITEM_LANTERN_ON ? ITEM_LANTERN_OFF : item) == 1;
+}
+
+static unsigned sXyHeld, sXyDown, sXyPrevious;
+static bool sXyPressed;
+#endif
+static int sActiveSlot = -1;
 
 
 const char* Port_SoftSlots_SlotName(int slot) {
@@ -68,12 +88,45 @@ const char* Port_SoftSlots_SlotName(int slot) {
 }
 
 void Port_SoftSlots_Init(void) {
+#ifndef TMC_3DS
     if (sLoaded) return;
     Port_SoftSlots_Load();
     sLoaded = true;
+#endif
 }
 
+#ifdef TMC_3DS
+void Port_SoftSlots_SetXyInput(unsigned heldMask, unsigned downMask) {
+    sXyHeld = heldMask & 3u;
+    sXyDown |= downMask & 3u;
+}
+
+void Port_SoftSlots_UpdateXy(bool enabled, bool physicalB) {
+    unsigned held = 0;
+    const unsigned down = sXyDown;
+    sXyDown = 0;
+    if (enabled && !physicalB) {
+        for (int i = 0; i < 2; ++i) {
+            const unsigned bit = 1u << i;
+            if (((sXyHeld | down) & bit) && Port_SoftSlots_GetAssignment(i)) held |= bit;
+        }
+    }
+    const unsigned pressed = held & (down | ~sXyPrevious);
+    const int previous = sActiveSlot;
+    if (pressed) sActiveSlot = (pressed & 2u) ? 1 : 0;
+    else if (sActiveSlot < 0 || !(held & (1u << sActiveSlot)))
+        sActiveSlot = (held & 2u) ? 1 : (held & 1u) ? 0 : -1;
+    sXyPressed = sActiveSlot >= 0 && (sActiveSlot != previous || (pressed & (1u << sActiveSlot)));
+    sXyPrevious = held;
+}
+
+bool Port_SoftSlots_XyPressed(void) { return sXyPressed; }
+#endif
+
 void Port_SoftSlots_Update(void) {
+#ifdef TMC_3DS
+    Port_SoftSlots_UpdateXy(true, false);
+#else
     Port_SoftSlots_Init();
 
     static bool sPrevHeld[PORT_SOFTSLOT_COUNT] = { false, false, false, false };
@@ -105,6 +158,7 @@ void Port_SoftSlots_Update(void) {
 
     sActiveSlot = chosen;
     memcpy(sPrevHeld, nowHeld, sizeof(sPrevHeld));
+#endif
 }
 
 bool Port_SoftSlots_IsBHeld(void) {
@@ -113,30 +167,48 @@ bool Port_SoftSlots_IsBHeld(void) {
 
 uint8_t Port_SoftSlots_GetEffectiveBItem(uint8_t saved) {
     if (sActiveSlot < 0) return saved;
-    uint8_t a = sAssignments[sActiveSlot];
-    return a ? a : saved;
+    const uint8_t item = Port_SoftSlots_GetAssignment(sActiveSlot);
+    return item ? item : saved;
 }
 
 uint8_t Port_SoftSlots_GetAssignment(int slot) {
+#ifdef TMC_3DS
+    if ((unsigned)slot >= 2 || memcmp(gSave.filler4ac, kXyMagic, sizeof(kXyMagic)) != 0) return 0;
+    const uint8_t item = gSave.filler4ac[sizeof(kXyMagic) + slot];
+    return OwnsXyItem(item) ? item : ITEM_NONE;
+#else
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return 0;
     return sAssignments[slot];
+#endif
 }
 
 void Port_SoftSlots_SetAssignment(int slot, uint8_t itemId) {
+#ifdef TMC_3DS
+    if ((unsigned)slot >= 2 || (itemId && !OwnsXyItem(itemId))) return;
+    if (memcmp(gSave.filler4ac, kXyMagic, sizeof(kXyMagic)) != 0) {
+        memcpy(gSave.filler4ac, kXyMagic, sizeof(kXyMagic));
+        memset(gSave.filler4ac + sizeof(kXyMagic), 0, 2);
+    }
+    gSave.filler4ac[sizeof(kXyMagic) + slot] = itemId;
+#else
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return;
     sAssignments[slot] = itemId;
     Port_SoftSlots_Save();
+#endif
 }
 
 void Port_SoftSlots_Save(void) {
+#ifndef TMC_3DS
     FILE* f = fopen(SOFTSLOT_FILENAME, "wb");
     if (!f) return;
     fwrite(SOFTSLOT_MAGIC, 1, sizeof(SOFTSLOT_MAGIC), f);
     fwrite(sAssignments, 1, sizeof(sAssignments), f);
     fclose(f);
+#endif
 }
 
 void Port_SoftSlots_Load(void) {
+#ifndef TMC_3DS
     memset(sAssignments, 0, sizeof(sAssignments));
     FILE* f = fopen(SOFTSLOT_FILENAME, "rb");
     if (!f) return;
@@ -148,6 +220,7 @@ void Port_SoftSlots_Load(void) {
         }
     }
     fclose(f);
+#endif
 }
 
 /* ---- Assignment UI helpers (cycling through owned items) -------------- */
@@ -197,7 +270,7 @@ static const char* ItemDisplayName(uint8_t id) {
 const char* Port_SoftSlots_GetSlotLabel(int slot) {
     static char buf[64];
     if (slot < 0 || slot >= PORT_SOFTSLOT_COUNT) return "?";
-    uint8_t id = sAssignments[slot];
+    uint8_t id = Port_SoftSlots_GetAssignment(slot);
     snprintf(buf, sizeof(buf), "%-3s : %s",
              Port_SoftSlots_SlotName(slot), ItemDisplayName(id));
     return buf;
@@ -220,7 +293,7 @@ void Port_SoftSlots_CycleAssignment(int slot, int direction) {
 
     /* Walk the circular sequence (unassigned, kEquippable[0..n-1]) until
      * we hit a position the player owns (or wrap back to start). */
-    int idx = CycleIndexOf(sAssignments[slot]); /* -1 = unassigned */
+    int idx = CycleIndexOf(Port_SoftSlots_GetAssignment(slot)); /* -1 = unassigned */
     for (int tries = 0; tries < n + 1; tries++) {
         idx += step;
         if (idx >= n) {
@@ -315,7 +388,7 @@ bool Port_SoftSlots_ConfigHandleKey(int sdlKey) {
 static const char* SlotValueLabel(int slot) {
     /* sAssignments stored across runs; render "—" for empty so the panel
      * looks intentional rather than crashed. */
-    uint8_t id = sAssignments[slot];
+    uint8_t id = Port_SoftSlots_GetAssignment(slot);
     if (id == 0) return "---";
     /* Reuse ItemDisplayName — the same name table the cycle code drives. */
     static char buf[32];

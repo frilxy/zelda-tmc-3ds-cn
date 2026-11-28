@@ -24,7 +24,8 @@ static inline size_t PpuGpu3DS_CommandWordsRequired(const PpuGpu3DSCommandBuffer
     for (size_t i = 1; i < commands->batchCount; ++i) {
         const PpuGpu3DSBatch* batch = &commands->batches[i];
         if (batch->indexCount == 0) continue;
-        const size_t draws = batch->layer == PPU_GPU3DS_OBJ && !batch->objWindow ? 2u : 1u;
+        /* The pre-pass, the colour draw and its repeat (port_ppu_gpu_3ds.c). */
+        const size_t draws = batch->layer == PPU_GPU3DS_OBJ && !batch->objWindow ? 3u : 1u;
         if (words > SIZE_MAX - draws * PPU_GPU3DS_WORDS_PER_DRAW) return SIZE_MAX;
         words += draws * PPU_GPU3DS_WORDS_PER_DRAW;
     }

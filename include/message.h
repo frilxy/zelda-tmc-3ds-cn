@@ -86,6 +86,17 @@ PORT_STATIC_ASSERT_SIZE(TextRender, 0xa8, 0xD8, "TextRender size incorrect");
  */
 void MessageInitialize(void);
 
+#ifdef TMC_3DS
+/* Rasterize the original sword-technique ROM message over a private image.
+ * The palette is BG bank F from the native sword-technique screen. */
+void Port_Text_DrawTechnique(uint32_t* pixels, int width, int height, int stride, int x, int y, u32 textIndex,
+                             const uint32_t* palette);
+/* Center the first ROM item-name line on the supplied footer interior. */
+void Port_Text_DrawItemName(uint32_t* pixels, int width, int height, int stride, int y, unsigned item,
+                            const uint32_t* palette);
+#endif
+
+
 /**
  * @brief Update the message system.
  *

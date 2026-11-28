@@ -680,6 +680,20 @@ static const OverworldLocation* RegionLocation(int32_t region) {
     return NULL;
 }
 
+#ifdef TMC_3DS
+unsigned Port_SecondScreenWorldMap_GetRegionNameText(int32_t region) {
+    const OverworldLocation* loc = RegionLocation(region);
+    return loc ? loc->textIndex : 0;
+}
+
+unsigned Port_SecondScreenWorldMap_GetAreaNameText(uint8_t area) {
+    extern const u16 gUnk_08108DE8[];
+    if (area >= 153) return 0;
+    const unsigned location = gAreaMetadata[area].location;
+    return location <= 30 ? gUnk_08108DE8[location] : 0;
+}
+#endif
+
 /* Everything the enlarged map of one region needs, all of it sub_080A69E0's
  * and sub_080A66D0's own arithmetic: the overworld pixel the artwork's
  * (0, 0) stands for (including that function's per-region origin fixups),

@@ -1,4 +1,5 @@
 #include "platform_3ds.h"
+#include "boot_screen_3ds.h"
 #include "updater.h"
 #include "port_second_screen_theme.h"
 
@@ -172,14 +173,14 @@ static int RomIsSupported(const char* path, const struct stat* info) {
     }
     if (!Port_RomProfileIsPlayable(profile)) {
         if (hashes.sha256[0] != '\0') {
-            printf("Skipping unsupported ROM: %s\nSHA-256: %s\n", path, hashes.sha256);
+            fprintf(stderr, "Skipping unsupported ROM: %s\nSHA-256: %s\n", path, hashes.sha256);
         }
         return 0;
     }
     if (!RomMatchesBuildFamily(profile)) {
         if (sMismatchedRomProfile == NULL)
             sMismatchedRomProfile = profile;
-        printf("Skipping ROM for a different build family: %s\n"
+        fprintf(stderr, "Skipping ROM for a different build family: %s\n"
                "Profile: %s\nBuild baseline: %s\nRequired baseline: %s\n",
                path, profile->displayName, BuildBaselineName(), RequiredBuildBaseline(profile));
         return 0;
@@ -230,16 +231,10 @@ int main(int argc, char** argv) {
     (void)argv;
     if (!Platform3DS_Init())
         return 1;
-    Platform3DS_ShowSplash();
+    BootScreen3DS_Start();
 
-    printf("The Minish Cap 3DS v" TMC_PORT_VERSION "\n\n");
-    printf("System: %s\n", Platform3DS_IsNew3DS() ? "New Nintendo 3DS" : "Nintendo 3DS");
-    printf("Performance: %s\n",
-           Platform3DS_IsNew3DS() ? "New 3DS full presentation" : "Old 3DS adaptive presentation skip (max 3)");
-    printf("PPU worker core 1: %u%%\n", Platform3DS_Core1TimeLimit());
-    printf("Extra New 3DS core: %s\n\n", Platform3DS_IsNew3DS() ? "enabled" : "unavailable");
-    printf("Preparing storage...\n");
     if (!PrepareStorage()) {
+        BootScreen3DS_Stop();
         Platform3DS_ShowFatal("Storage error", "Could not open " APP_DIR ".");
         Platform3DS_Shutdown();
         return 1;
@@ -271,6 +266,7 @@ int main(int argc, char** argv) {
                      "Supported: USA, Europe, clean Japan, and Angel Chinese SP4.",
                      APP_DIR);
         }
+        BootScreen3DS_Stop();
         Platform3DS_ShowFatal(romResult == -2 ? "ROM/build mismatch"
                               : romResult < 0 ? "Unsupported ROM"
                                               : "ROM not found",
@@ -281,24 +277,24 @@ int main(int argc, char** argv) {
 
     FILE* rom = fopen(romPath, "rb");
     if (!rom) {
+        BootScreen3DS_Stop();
         Platform3DS_ShowFatal("ROM error", "Could not open the selected .gba file.");
         Platform3DS_Shutdown();
         return 1;
     }
     fclose(rom);
 
-    printf("ROM profile: %s (%s)\n", sSelectedRomProfile->displayName, sSelectedRomProfile->id);
-    printf("ROM SHA-1: %s\n", sSelectedRomHashes.sha1);
-    printf("Loading ROM and tables...\n");
+    fprintf(stderr, "ROM profile: %s (%s)\n", sSelectedRomProfile->displayName, sSelectedRomProfile->id);
+    fprintf(stderr, "ROM SHA-1: %s\n", sSelectedRomHashes.sha1);
     Port_Config_Load("tmc3ds.ini");
     Port_LoadRom(romPath);
     Port_SecondScreenTheme_Ready();
+    BootScreen3DS_Stop();
     Port_PPU_Init(NULL);
     if (!Port_Audio_Init()) {
-        printf("Warning: audio is unavailable.\n");
+        fprintf(stderr, "Warning: audio is unavailable.\n");
     }
 
-    printf("Starting engine...\n");
     Platform3DS_EnterGameplayDisplay();
     Updater_Init(argc > 0 ? argv[0] : NULL);
     AgbMain();

@@ -26,6 +26,8 @@ int port_hdma_has_active_channels(void);
  * value is unchanged (constant-value HDMA pins the layer on hardware). */
 int port_hdma_dest_overlaps(const void* lo, const void* hi);
 void port_hdma_unregister(int channel);
+/* The table an active channel writing to `dest` started from this frame, or NULL. */
+const void* port_hdma_source_for_dest(const void* dest);
 void port_hdma_step_line(int line);
 void port_hdma_vblank_reset(void);
 

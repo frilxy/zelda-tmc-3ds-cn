@@ -75,6 +75,19 @@ int Port_SecondScreenQuest_DrawTechniques(uint32_t* pixels, int32_t bufW, int32_
                                           int32_t dstX, int32_t dstY, int32_t dstW, int32_t dstH,
                                           const SecondScreenSnapshot* snap);
 
+#ifdef TMC_3DS
+/* Compact 320x240 pause-menu block. Called on the 3DS main thread after
+ * the shared theme has initialized. The caller supplies the surrounding UI. */
+enum { PORT_QUEST_COMPACT_COUNT = 12, PORT_QUEST_TECHNIQUE_COUNT = 8 };
+/* Native coordinates relative to the 240×160 detail stone. */
+SecondScreenQuestRect Port_SecondScreenQuest_TechniqueRect(int index);
+unsigned Port_SecondScreenQuest_TechniqueBit(int index);
+void Port_SecondScreenQuest_DrawTechniqueScroll(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride,
+                                                int32_t px, int32_t py, int index);
+SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id);
+void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const SecondScreenSnapshot* snap);
+#endif
+
 #ifdef PORT_SECOND_SCREEN_QUEST_TEST
 /* Direct host entry into the production list-cell renderer. */
 void Port_SecondScreenQuest_TestDrawKinstoneListCell(

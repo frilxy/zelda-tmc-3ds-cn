@@ -5,7 +5,7 @@
 
 #include <string.h>
 
-#define CONFIG_3DS_DEFAULT_ASPECT PORT_3DS_ASPECT_STRETCH
+#define CONFIG_3DS_DEFAULT_ASPECT PORT_3DS_ASPECT_WIDE
 #define CONFIG_3DS_DEFAULT_DISPLAY PORT_3DS_DISPLAY_BILINEAR
 
 _Static_assert(PORT_3DS_DISPLAY_BLUR == 0 && PORT_3DS_DISPLAY_BILINEAR == 1 &&
@@ -16,14 +16,19 @@ static inline const char* ConfigValues3DS_AspectName(Port3DSAspectRatio mode) {
     static const char* const names[PORT_3DS_ASPECT_COUNT] = {
         [PORT_3DS_ASPECT_WIDE] = "wide",
         [PORT_3DS_ASPECT_ORIGINAL] = "original",
-        [PORT_3DS_ASPECT_STRETCH] = "stretch",
+        [PORT_3DS_ASPECT_WIDE_AI] = "wide-ai",
     };
     return mode >= 0 && mode < PORT_3DS_ASPECT_COUNT ? names[mode]
                                                      : names[CONFIG_3DS_DEFAULT_ASPECT];
 }
 
+static inline bool ConfigValues3DS_IsWide(Port3DSAspectRatio mode) {
+    return mode == PORT_3DS_ASPECT_WIDE || mode == PORT_3DS_ASPECT_WIDE_AI;
+}
+
 static inline Port3DSAspectRatio ConfigValues3DS_ParseAspect(const char* value) {
     if (value != NULL) {
+        if (strcmp(value, "stretch") == 0) return PORT_3DS_ASPECT_WIDE;
         for (int i = 0; i < PORT_3DS_ASPECT_COUNT; ++i) {
             if (strcmp(value, ConfigValues3DS_AspectName((Port3DSAspectRatio)i)) == 0) {
                 return (Port3DSAspectRatio)i;
@@ -47,7 +52,7 @@ static inline const char* ConfigValues3DS_DisplayLabel(Port3DSDisplayStyle style
     static const char* const names[PORT_3DS_DISPLAY_COUNT] = {
         [PORT_3DS_DISPLAY_BLUR] = "模糊",
         [PORT_3DS_DISPLAY_BILINEAR] = "双线性",
-        [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "完美像素",
+        [PORT_3DS_DISPLAY_PIXEL_PERFECT] = "点对点",
     };
     return style >= 0 && style < PORT_3DS_DISPLAY_COUNT ? names[style]
                                                         : names[CONFIG_3DS_DEFAULT_DISPLAY];

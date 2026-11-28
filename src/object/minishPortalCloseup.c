@@ -11,6 +11,17 @@
 #include "room.h"
 #include "screen.h"
 #include "fade.h"
+#ifdef PC_PORT
+#include "port_widescreen.h"
+
+/* A wide view draws the circle across the whole view (Port_Widescreen_Win0Lines):
+ * the centre, in view pixels, can lie past x=255, which WIN0 cannot hold. */
+static void PortalCloseupCircle(s32 x, s32 y, u32 radius) {
+    sub_0801E1EC(x, y, radius);
+    Port_Widescreen_NoteWindowCircle(x, y, radius);
+}
+#define sub_0801E1EC PortalCloseupCircle
+#endif
 
 typedef struct {
     /*0x00*/ Entity base;
@@ -53,6 +64,14 @@ void MinishPortalCloseup_Action1(MinishPortalCloseupEntity* this) {
         sub_0801E1EC(super->x.HALF.HI, super->y.HALF.HI, this->unk_68);
     } else {
         gScreen.controls.windowOutsideControl = 0x10;
+#ifdef PC_PORT
+        /* What is left of the circle (20 px and closing) shows the backdrop and the
+         * closeup sprite outside it: in a wide view, where the window is the noted
+         * circle's mask, show the sprite alone instead. */
+        if (Port_Widescreen_EffectiveViewWidth() > 240) {
+            gScreen.lcd.displayControl &= ~(DISPCNT_WIN0_ON | DISPCNT_BG_ALL_ON);
+        }
+#endif
         sub_0808D030();
         ResetPaletteTable(0);
         ResetPalettes();

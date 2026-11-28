@@ -66,6 +66,9 @@
 #ifdef TMC_3DS
 #include "platform_3ds.h"
 #include "port_dump_state_3ds.h"
+#include "port_second_screen_3ds.h"
+#include "bottom_pause_hud_3ds.h"
+#include "message.h"
 
 extern void Port_PPU_3DS_WriteQuickDump(void);
 extern double Port_PPU_3DS_CurrentFps(void);
@@ -145,6 +148,9 @@ enum {
     SS_ACT_MAPVIEW,
     SS_ACT_MAPZOOM,
     SS_ACT_QUESTVIEW, /* arg: which quest screen to show */
+#ifdef TMC_3DS
+    SS_ACT_TECHNIQUE, /* arg: which scroll on the native stone to describe */
+#endif
     SS_ACT_SETTINGS_PAGE,
     SS_ACT_SETTINGS_BACK,
     SS_ACT_DEVELOPER_DUMP,
@@ -155,6 +161,8 @@ enum {
     SS_ACT_RANDO_CANCEL,
     SS_ACT_RANDO_CONFIRM,
 #ifdef TMC_3DS
+    SS_ACT_LIVE_PICK, SS_ACT_LIVE_SAVE, SS_ACT_LIVE_CONFIRM,
+    SS_ACT_LIVE_CANCEL, SS_ACT_LIVE_SETTINGS,
     SS_ACT_UPDATE_CHANNEL,
     SS_ACT_UPDATE_RELEASE,
     SS_ACT_UPDATE_ACTION,
@@ -172,8 +180,12 @@ enum {
     SS_SETTINGS_RANDOMIZER,
 #ifdef TMC_3DS
     SS_SETTINGS_UPDATE,
+    SS_SETTINGS_CLOSE,
 #endif
 };
+
+#ifdef TMC_3DS
+#endif
 
 /* Settings rows, top to bottom. The second-screen-only toggles persist
  * through their Port_Config accessors alone; the port-wide rows reuse the
@@ -197,6 +209,7 @@ enum {
 #ifdef TMC_3DS
     SS_SET_ASPECT_RATIO,
     SS_SET_DISPLAY_STYLE,
+    SS_SET_STEREO_WORLD,
 #endif
     SS_SET_COUNT
 };
@@ -265,6 +278,10 @@ static int sTapTargetCount = 0;
 static struct {
     uint8_t tab;
     uint8_t settingsPage;
+#ifdef TMC_3DS
+    bool liveSettingsOpen;
+    uint8_t resumeTab, liveItem, saveConfirm, saveResult;
+#endif
     uint8_t wholeMap;    /* map tab: whole-Hyrule view instead of follow cam */
     uint8_t armedRing;   /* 0 none, 1 = next item tap assigns A, 2 = B */
     int8_t floorPreview; /* plaque-selected display floor, SS_NO_FLOOR = live */
@@ -287,6 +304,13 @@ static struct {
     int32_t regionId;
     int32_t regionX0, regionY0, regionX1, regionY1;
     uint32_t regionTick;
+#ifdef TMC_3DS
+    struct {
+        TapTarget bounds;
+        int32_t artW, artH, offsetX, offsetY;
+        bool ready;
+    } regionViewport;
+#endif
     /* Set by paint when the zoom grid answers, so the tap handler knows
      * whether a map tap can zoom at all (stub -> plain follow/whole
      * toggle, exactly the behavior before the zoom existed). */
@@ -294,6 +318,9 @@ static struct {
     /* Quest tab: which of its screens is up — the status screen itself or
      * one of the two lists it opens, the same step in the pause menu. */
     uint8_t questView;
+#ifdef TMC_3DS
+    uint8_t techniqueSelection; /* zero until a learned scroll is touched */
+#endif
     uint32_t dumpFlashUntil;
     uint32_t loadStateFlashUntil;
     uint8_t loadStateResult;
@@ -951,11 +978,13 @@ static void DrawPin(const SSurf* s, float x, float y, float cell, uint32_t color
     DrawPixelArt(s, kPinArt, 12, px, py, cell, color);
 }
 
+#ifndef TMC_3DS
 /* Three sliders on a 9x9 grid — the settings-button glyph. A gear shape
  * reads as a blob at this size (same call the reference made). */
 static const char* const kCogArt[9] = {
     ".###.....", "#########", ".###.....", ".....###.", "#########", ".....###.", "..###....", "#########", "..###....",
 };
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Target list                                                        */
@@ -1095,10 +1124,18 @@ static void PaintSchematic(const SSurf* s, const SecondScreenSnapshot* snap, int
  * ever sampled. Coordinates measured on the composed image: the frame's
  * outer outline spans x 16..222, y 3..147 inclusive (its rounded corners
  * leave sub-pixel cream slivers that match our backdrop cream anyway). */
+#ifdef TMC_3DS
+/* The live 3DS screen supplies its own slab; fit only the map inside it. */
+#define WMAP_CROP_X0 39
+#define WMAP_CROP_Y0 12
+#define WMAP_CROP_X1 201
+#define WMAP_CROP_Y1 141
+#else
 #define WMAP_CROP_X0 16
 #define WMAP_CROP_Y0 3
 #define WMAP_CROP_X1 223
 #define WMAP_CROP_Y1 148
+#endif
 
 /* Nearest-neighbor blit of the map image under transform (ox, oy, scale),
  * clipped to the given rect; samples only the frame crop of the source.
@@ -1126,7 +1163,7 @@ static void BlitMapRegion(const SSurf* s, const uint32_t* img, int32_t imgW, int
      * tab, so it is the average paint cost rather than a spike.
      *
      * 16.16 fixed point turns the step into an integer add and a shift. Only
-     * sx >= sxMin (WMAP_CROP_X0 = 16) is ever written, so for every pixel that
+     * sx >= sxMin is ever written, so for every pixel that
      * reaches the buffer the shift's floor and the cast's truncate-toward-zero
      * agree; negative sx is skipped by the bounds test in both forms.
      *
@@ -1214,6 +1251,7 @@ static float MapTabCenterX(float width, float u) {
     return x0 + 1.5f * bw + gap;
 }
 
+#ifndef TMC_3DS
 /* Square icon chip: the map's zoom / back controls drawn with the body face's
  * own symbols (U+2315 and U+21A9) instead of words, so they match the caption
  * weight and never need hand-drawn pixel art. */
@@ -1232,6 +1270,7 @@ static void DrawMapIconChipAt(const SSurf* s, const char* glyph, float x0, float
     out[2] = x0 + side;
     out[3] = y0 + side;
 }
+#endif
 
 /* Same plate, anchored by its top-left corner instead of its centre. The
  * size is derived exactly the way DrawMapChip derives it, so a chip moved to
@@ -1256,13 +1295,7 @@ static void DrawMapChipAt(const SSurf* s, const char* label, float x0, float y0,
 static float WholeMapScale(float width, float height) {
     float sx = width / (WMAP_CROP_X1 - WMAP_CROP_X0);
     float sy = height / (WMAP_CROP_Y1 - WMAP_CROP_Y0);
-    return fminf(sx, sy) * 0.97f * 0.98f;
-}
-
-static float WholeMapCenterX(float width, float scale) {
-    /* Shift the artwork left by 1% of the panel width. Keep the panel,
-     * clipping bounds and controls fixed while the camera glides. */
-    return (WMAP_CROP_X0 + WMAP_CROP_X1) * 0.5f + width * 0.01f / scale;
+    return fminf(sx, sy);
 }
 #endif
 
@@ -1302,15 +1335,18 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     /* Camera target: follow Link unless the whole map is asked for (or the
      * follow cam is switched off / there is no fix yet). */
-    int wantWhole = wholeMap || !followCfg || !sLastFix.valid;
+#ifdef TMC_3DS
+    /* Every region remains reachable without a separate zoom control. */
+    (void)wholeMap;
+    (void)followCfg;
+    const int wantWhole = 1;
+#else
+    const int wantWhole = wholeMap || !followCfg || !sLastFix.valid;
+#endif
     float tScale = wantWhole ? wholeScale : followScale;
     float tx, ty;
     if (wantWhole) {
-#ifdef TMC_3DS
-        tx = WholeMapCenterX(rw, wholeScale);
-#else
         tx = WMAP_CROP_X0 + cw / 2.0f;
-#endif
         ty = WMAP_CROP_Y0 + chh / 2.0f;
     } else {
         float halfW = rw / (2.0f * tScale), halfH = rh / (2.0f * tScale);
@@ -1420,8 +1456,16 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
      * every region whose discovery bit is still clear. Draw these last,
      * exactly like sub_080A6498, so hidden terrain and its markers cannot
      * leak through the bottom screen. */
+    int32_t coverX0 = (int32_t)rx0, coverY0 = (int32_t)ry0;
+    int32_t coverX1 = (int32_t)rx1, coverY1 = (int32_t)ry1;
+#ifdef TMC_3DS
+    coverX0 = (int32_t)ceilf(fmaxf(rx0, ox + WMAP_CROP_X0 * sCam.scale));
+    coverY0 = (int32_t)ceilf(fmaxf(ry0, oy + WMAP_CROP_Y0 * sCam.scale));
+    coverX1 = (int32_t)ceilf(fminf(rx1, ox + WMAP_CROP_X1 * sCam.scale));
+    coverY1 = (int32_t)ceilf(fminf(ry1, oy + WMAP_CROP_Y1 * sCam.scale));
+#endif
     Port_SecondScreenWorldMap_DrawUnrevealedRegions(s->px, s->w, s->h, s->stride, snap->windcrests, ox, oy, sCam.scale,
-                                                    (int32_t)rx0, (int32_t)ry0, (int32_t)rx1, (int32_t)ry1);
+                                                     coverX0, coverY0, coverX1, coverY1);
 
     /* Zoom-grid availability, asked once per frame at the view center: the
      * map screen's own tile grid answering means a tap can zoom, which is
@@ -1476,6 +1520,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     sUi.regionGridReady = (uint8_t)(gridReady != 0);
     UI_UNLOCK();
 
+#ifndef TMC_3DS
     /* Changing the zoom is the chip's job and only the chip's: ZOOM steps
      * between Link's close view and the whole of Hyrule, and stays labelled
      * ZOOM in both because both are somewhere you can zoom from. Only the
@@ -1496,12 +1541,63 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         DrawMapIconChipAt(s, "\u2315", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
+#endif
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 }
 
 /* ------------------------------------------------------------------ */
 /*  Regional map (MAP tab, after a tile zoom)                          */
 /* ------------------------------------------------------------------ */
+
+#ifdef TMC_3DS
+bool Port_SecondScreen_3DS_ExitRegion(void) {
+    UI_LOCK();
+    const bool open = sUi.tab == SS_TAB_MAP && sUi.regionState == SS_REGION_VIEW;
+    if (open) {
+        sUi.regionState = SS_REGION_OFF;
+        sUi.regionViewport.ready = false;
+        sTapTargetCount = 0;
+    }
+    UI_UNLOCK();
+    return open;
+}
+
+static int32_t RegionOffset(int64_t offset, int32_t viewport, int32_t art) {
+    const int32_t space = viewport - art;
+    if (space >= 0) return space / 2;
+    if (offset < space) return space;
+    if (offset > 0) return 0;
+    return (int32_t)offset;
+}
+
+static bool RegionContains(TapTarget bounds, int x, int y) {
+    return x >= bounds.x0 && x < bounds.x1 && y >= bounds.y0 && y < bounds.y1;
+}
+
+/* x/y are the touch-down point and dx/dy are this poll's movement. The
+ * wrapper checks the visible hit-box generation on the zero-delta probe.
+ * Subsequent deltas may arrive while the last repaint is still pending. */
+bool Port_SecondScreen_3DS_DragRegion(int x, int y, int dx, int dy) {
+    bool accepted = false;
+    bool changed = false;
+    UI_LOCK();
+    if (sUi.tab == SS_TAB_MAP && sUi.regionState == SS_REGION_VIEW && sUi.regionViewport.ready &&
+        RegionContains(sUi.regionViewport.bounds, x, y)) {
+        const TapTarget bounds = sUi.regionViewport.bounds;
+        const int32_t nextX = RegionOffset((int64_t)sUi.regionViewport.offsetX + dx,
+                                           bounds.x1 - bounds.x0, sUi.regionViewport.artW);
+        const int32_t nextY = RegionOffset((int64_t)sUi.regionViewport.offsetY + dy,
+                                           bounds.y1 - bounds.y0, sUi.regionViewport.artH);
+        changed = nextX != sUi.regionViewport.offsetX || nextY != sUi.regionViewport.offsetY;
+        sUi.regionViewport.offsetX = nextX;
+        sUi.regionViewport.offsetY = nextY;
+        accepted = true;
+    }
+    UI_UNLOCK();
+    if (changed) Port_SecondScreen_3DS_RequestRefresh();
+    return accepted;
+}
+#endif
 
 /* The enlarged map of one zoom-grid tile — the screen the game opens when
  * the player puts the map cursor on a tile — filling the map area, with the
@@ -1518,6 +1614,34 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
         return 0;
     }
 
+    const SSurf* artSurface = s;
+#ifdef TMC_3DS
+    /* Preserve the ROM artwork at 1:1. The art and its markers share a
+     * clipped viewport, and palette index 0 shows the existing themed backing. */
+    const int32_t left = dx < 0 ? 0 : dx;
+    const int32_t top = dy < 0 ? 0 : dy;
+    const int32_t right = (int32_t)rx1 > s->w ? s->w : (int32_t)rx1;
+    const int32_t bottom = (int32_t)ry1 > s->h ? s->h : (int32_t)ry1;
+    if (right <= left || bottom <= top ||
+        !Port_SecondScreenWorldMap_GetRegionSize(region, &dw, &dh)) return 0;
+    const SSurf viewport = {s->px + (size_t)top * s->stride + left, right - left, bottom - top, s->stride};
+    artSurface = &viewport;
+
+    UI_LOCK();
+    if (sUi.tab != SS_TAB_MAP || sUi.regionState != SS_REGION_VIEW || sUi.regionId != region) {
+        UI_UNLOCK();
+        return 0;
+    }
+    const bool ready = sUi.regionViewport.ready;
+    dx = RegionOffset(ready ? sUi.regionViewport.offsetX : (viewport.w - dw) / 2, viewport.w, dw);
+    dy = RegionOffset(ready ? sUi.regionViewport.offsetY : (viewport.h - dh) / 2, viewport.h, dh);
+    sUi.regionViewport.bounds = (TapTarget){.x0 = left, .y0 = top, .x1 = right, .y1 = bottom};
+    sUi.regionViewport.artW = dw;
+    sUi.regionViewport.artH = dh;
+    sUi.regionViewport.offsetX = dx;
+    sUi.regionViewport.offsetY = dy;
+    UI_UNLOCK();
+#else
     /* Letterbox to the artwork's aspect instead of filling the rect. The map
      * area is close to square on this panel while the region art is not, so
      * stretching to fill visibly distorted the tiles — trees and bridges came
@@ -1558,7 +1682,10 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
         }
     }
 
-    if (!Port_SecondScreenWorldMap_DrawRegion(s->px, s->w, s->h, s->stride, dx, dy, dw, dh, region)) {
+#endif
+
+    if (!Port_SecondScreenWorldMap_DrawRegion(artSurface->px, artSurface->w, artSurface->h, artSurface->stride,
+                                             dx, dy, dw, dh, region)) {
         return 0;
     }
 
@@ -1580,8 +1707,9 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
             /* Ringed in ink like the world map's hints: the enlarged region
              * art is the busiest surface on the panel, and a fused-kinstone
              * or errand glyph dropped bare onto a treeline vanished into it. */
-            Port_SecondScreenWorldMap_DrawMarker(s->px, s->w, s->h, s->stride, dx + marks[i].x - 8 * mscale,
-                                                 dy + marks[i].y - 8 * mscale, mscale, marks[i].frame, region, markInk);
+            Port_SecondScreenWorldMap_DrawMarker(artSurface->px, artSurface->w, artSurface->h, artSurface->stride,
+                                                 dx + marks[i].x - 8 * mscale, dy + marks[i].y - 8 * mscale,
+                                                 mscale, marks[i].frame, region, markInk);
         }
     }
 
@@ -1589,17 +1717,21 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     if (Port_SecondScreenWorldMap_LocateInRegion(region, snap->area, snap->playerX, snap->playerY, dw, dh, &px, &py)) {
         int32_t base = (int32_t)(7.0f * u);
         uint32_t gold = Port_SecondScreenTheme_Color(SSC_GOLD);
-        DrawMapMarker(s, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
+        DrawMapMarker(artSurface, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
     }
 
+#ifdef TMC_3DS
+    UI_LOCK();
+    if (sUi.regionState == SS_REGION_VIEW && sUi.regionId == region)
+        sUi.regionViewport.ready = true;
+    UI_UNLOCK();
+    (void)tl; /* The region viewport takes drags. B returns to the overview. */
+#else
     float chip[4];
-    /* Same anchor as the zoom chip on the level above: the control lives in
-     * the floor-plaque column, not under the map. */
     DrawMapIconChipAt(s, "\u21a9", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
     AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
-    /* Anywhere else on the region map goes back too — the same "tap again"
-     * gesture that opened it. */
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
+#endif
     return 1;
 }
 
@@ -1651,6 +1783,9 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         viewFloor = info.floorCount - 1;
 
     /* Name banner, top center — the pause menu's red header chip. */
+#ifdef TMC_3DS
+    const float topY = ry0;
+#else
     float topY = ry0 + 12 * u;
     const char* name = snap->dungeonIdx < 7 ? kDungeonNames[snap->dungeonIdx] : NULL;
     if (name != NULL) {
@@ -1668,6 +1803,7 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
         MenuTextCenteredFace(s, name, cx, topY + lineH / 2.0f, ms, SS_TEXT_PLATE_INK, SS_FACE_LARGE);
         topY += lineH;
     }
+#endif
 
     /* Floor plaques, topmost floor first, down the left side: menu chips
      * (the previewed floor turns the header red, the rest stay dark). */
@@ -1678,6 +1814,10 @@ static void PaintDungeon(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     float pw = 132 * u, ph = 64 * u, pgap = 0;
     float px0 = rx0 + 20 * u;
     float py0 = topY + 12 * u;
+#ifdef TMC_3DS
+    const int floors = info.floorCount < 8 ? info.floorCount : 8;
+    ph = fminf(ph, (ry1 - py0) / floors);
+#endif
     int8_t topFloorNum = snap->dungeonIdx < 7 ? kDungeonTopFloor[snap->dungeonIdx] : 2;
     for (int i = 0; i < info.floorCount && i < 8; i++) {
         float y0 = py0 + i * (ph + pgap);
@@ -1886,6 +2026,27 @@ static void PaintItemsPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
  *   row 2  the four elements
  *   row 3  grip ring, bracelets, flippers
  */
+#ifdef TMC_3DS
+static void PaintTechniqueSelection(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl,
+                                    int px, int py) {
+    UI_LOCK();
+    int selected = (int)sUi.techniqueSelection - 1;
+    UI_UNLOCK();
+    for (int i = 0; i < PORT_QUEST_TECHNIQUE_COUNT; ++i) {
+        const unsigned bit = Port_SecondScreenQuest_TechniqueBit(i);
+        if (bit >= PORT_QUEST_TECHNIQUE_COUNT || (snap->swordSkillBits & (1u << bit)) == 0) continue;
+        const SecondScreenQuestRect rect = Port_SecondScreenQuest_TechniqueRect(i);
+        const int x = px + rect.x, y = py + rect.y;
+        AddTarget(tl, x, y, x + rect.w, y + rect.h, SS_ACT_TECHNIQUE, i);
+        if (selected < 0) selected = i;
+        if (selected != i) continue;
+        Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, x, y, rect.w, rect.h, 1,
+                                             Port_SecondScreenTheme_Color(SSC_MENU_RED));
+        Port_SecondScreenQuest_DrawTechniqueScroll(s->px, s->w, s->h, s->stride, px, py, i);
+    }
+}
+#endif
+
 static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0, float ry0,
                             float rx1, float ry1, float u, int32_t ts, uint32_t tick, int questView) {
     int32_t px = (int32_t)rx0, py = (int32_t)ry0;
@@ -1901,9 +2062,23 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                         : Port_SecondScreenQuest_DrawTechniques(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap);
         if (drawn) {
             float chip[4];
+#ifdef TMC_3DS
+            const bool techniques = questView == SS_QUEST_TECHNIQUES;
+            if (techniques) PaintTechniqueSelection(s, snap, tl, px, py);
+            const float centerY = ry0 + 16;
+            chip[0] = rx1 - 54;
+            chip[1] = centerY - 8;
+            chip[2] = rx1 - 12;
+            chip[3] = centerY + 8;
+            DrawLabelPlate(s, chip[0], chip[1], chip[2], chip[3], SS_PLATE_TITLE);
+            MenuTextCentered(s, "返回", (chip[0] + chip[2]) / 2, centerY, 1, SS_TEXT_PLATE_INK);
+#else
             DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+#endif
             AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
+#ifndef TMC_3DS
             AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
+#endif
             return;
         }
     }
@@ -2066,7 +2241,7 @@ static const char* const kSettingLabels[SS_SET_COUNT] = {
     "顶部HUD",  "宽屏",     "跟随镜头", "风之印记",     "自动返回楼层", "加速倍率", "主音量",
     "自动存档", "色彩校正", "显示帧率", "按住推进文本", "随机化",       "面板背景", "交换屏幕",
 #ifdef TMC_3DS
-    "宽高比",   "显示方式",
+    "宽高比",   "显示方式", "3D景深",
 #endif
 };
 
@@ -2098,9 +2273,9 @@ static const char* SettingValueMinWord(int setting) {
             return "重启";
 #ifdef TMC_3DS
         case SS_SET_ASPECT_RATIO:
-            return "原始";
+            return "宽屏+AI";
         case SS_SET_DISPLAY_STYLE:
-            return "完美像素";
+            return "点对点";
 #endif
         default:
             return "关闭";
@@ -2123,6 +2298,7 @@ static int SettingsPageRows(int page, uint8_t* out) {
 #ifdef TMC_3DS
         out[n++] = SS_SET_ASPECT_RATIO;
         out[n++] = SS_SET_DISPLAY_STYLE;
+        out[n++] = SS_SET_STEREO_WORLD;
         out[n++] = SS_SET_TOP_HUD;
         out[n++] = SS_SET_COLOR_CORRECTION;
         out[n++] = SS_SET_BACKDROP;
@@ -2400,6 +2576,9 @@ static int GetSettingState(int row, char* out, int outCap) {
         case SS_SET_DISPLAY_STYLE:
             snprintf(out, (size_t)outCap, "%s", Port_Config_Get3DSDisplayStyleName());
             return Port_Config_Get3DSDisplayStyle() != PORT_3DS_DISPLAY_BILINEAR;
+        case SS_SET_STEREO_WORLD:
+            on = Port_Config_GetStereoWorld();
+            break;
 #endif
     }
     if (row != SS_SET_TOP_HUD) {
@@ -2414,6 +2593,14 @@ static int GetSettingState(int row, char* out, int outCap) {
  * parchment, chips, font, and palette keep it native to this game. */
 #ifdef TMC_3DS
 #include "../platform/3ds/source/update_ui_3ds.inc"
+
+static void BeginUpdatePage(void) {
+    UpdateUI_Reset();
+    UpdateStatus status;
+    Updater_GetStatus(&status);
+    if (status.state != UPDATE_AVAILABLE)
+        Updater_Check();
+}
 #endif
 
 static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float rx0, float ry0,
@@ -2429,9 +2616,16 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         hms = 1;
     float headerH = MENU_TEXT_BOX * hms + 24 * u;
     DrawPanelHeaderChip(s, (rx0 + rx1) / 2, iy0, SettingsPageTitle(page), hms, u);
-    if (page != SS_SETTINGS_ROOT) {
-        DrawSettingsBack(s, tl, ix0 + 4 * u, iy0, headerH, SettingsBackPage(page), u, ts);
+    int backPage = SettingsBackPage(page);
+    bool showBack = page != SS_SETTINGS_ROOT;
+#ifdef TMC_3DS
+    if (page == SS_SETTINGS_ROOT) {
+        backPage = SS_SETTINGS_CLOSE;
+        showBack = true;
     }
+#endif
+    if (showBack)
+        DrawSettingsBack(s, tl, ix0 + 4 * u, iy0, headerH, backPage, u, ts);
 
     float x0 = ix0 + 6 * u, x1 = ix1 - 6 * u;
     float y0 = iy0 + headerH + 12 * u;
@@ -2501,6 +2695,8 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
 
     uint8_t rows[SS_SET_COUNT];
     int nRows = SettingsPageRows(page, rows);
+    if (nRows <= 0)
+        return;
     float gap = 7 * u;
     float rowH = (iy1 - y0 - (nRows - 1) * gap) / nRows;
     if (rowH > 76 * u)
@@ -2510,6 +2706,29 @@ static void PaintSettingsPanel(const SSurf* s, const SecondScreenSnapshot* snap,
         DrawSettingsValueRow(s, tl, x0, ry, x1, ry + rowH, rows[slot], u, ts);
     }
 }
+
+#ifdef TMC_3DS
+enum { SETTINGS_SLAB_MARGIN = 2 };
+
+static void PaintSettingsSlab(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float u, int32_t ts,
+                              int page, uint32_t tick, uint32_t dumpFlashUntil, uint32_t loadStateFlashUntil,
+                              int loadStateResult) {
+    const int margin = SETTINGS_SLAB_MARGIN;
+    const SSurf slab = {
+        s->px + margin * s->stride + margin, s->w - 2 * margin, s->h - 2 * margin, s->stride,
+    };
+    if (slab.w <= 0 || slab.h <= 0) return;
+    const int first = tl->n;
+    PaintSettingsPanel(&slab, snap, tl, 0, 0, slab.w, slab.h, u, ts, page, tick, dumpFlashUntil,
+                       loadStateFlashUntil, loadStateResult);
+    for (int i = first; i < tl->n; ++i) {
+        tl->t[i].x0 += margin;
+        tl->t[i].x1 += margin;
+        tl->t[i].y0 += margin;
+        tl->t[i].y1 += margin;
+    }
+}
+#endif
 
 typedef struct LoadStateConfirmationLayout {
     float x0;
@@ -2529,10 +2748,20 @@ typedef struct LoadStateConfirmationLayout {
 
 static LoadStateConfirmationLayout ComputeLoadStateConfirmationLayout(int32_t width, int32_t height, float u) {
     LoadStateConfirmationLayout layout;
+#ifdef TMC_3DS
+    /* Settings and its confirmations own the whole lower LCD. Keep a narrow
+     * two-pixel rim so every row and button remains inside one ROM-backed slab. */
+    (void)u;
+    layout.x0 = SETTINGS_SLAB_MARGIN;
+    layout.x1 = width - SETTINGS_SLAB_MARGIN;
+    layout.y0 = SETTINGS_SLAB_MARGIN;
+    layout.y1 = height - SETTINGS_SLAB_MARGIN;
+#else
     layout.x0 = 18 * u;
     layout.x1 = width - 18 * u;
     layout.y0 = 18 * u;
     layout.y1 = height - 18 * u;
+#endif
 
     /* The 3DS canvas is 320x240 (u=1/3). Keep this confirmation on an
      * explicit pixel rhythm: the old y0+10 title landed against the top
@@ -2961,7 +3190,7 @@ float Port_SecondScreen_TestSidebarRingRadius(float vitalsBottom, float chipY, f
 
 /* Sidebar, right edge: hearts on top (the most-glanced info), the R
  * prompt band under them, the A/B equip rings centered in the middle, the
- * rupee/keys chip anchored to the bottom, just above the tab bar. */
+ * rupee/keys chip anchored near the bottom. */
 static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, TargetList* tl, float x, float y, float w,
                          float h, float u, int32_t ts, uint32_t tick, int armedRing) {
     int isDungeon = (snap->areaFlags & SECOND_SCREEN_AR_HAS_KEYS) != 0;
@@ -3046,11 +3275,7 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
     DrawRPrompt(s, snap, x, promptBands.promptY, w, promptBands.promptHeight, u, ts);
     vitalsBottom = promptBands.contentBottom;
 
-    /* Bare counters sit above the tab bar without another stone tray, on ONE
-     * row: the small key left of the rupee in a dungeon. Scale is computed
-     * with the key group present on every map, so the rupee is the same size
-     * indoors and out, and the block never grows a second row -- the equip
-     * rings above it keep the space they have above ground. */
+    /* Size the counters together so the rupee is the same size indoors and out. */
     int32_t ik = 2 * k;           /* icon scale (16x16 art) */
     int32_t ck = k + (k + 1) / 2; /* digit scale (8x16 HUD font) */
     float chipPad = 2 * u;
@@ -3084,6 +3309,10 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
                           snap->dungeonKeys, 2, 0);
             ry += rowH + 6 * u;
         }
+#ifdef TMC_3DS
+        /* Give the rupee row more space above it. */
+        ry += 16 * u;
+#endif
         {
             float groupW = 16 * ik + groupGap + numberW;
             float ixl = x + (w - groupW) / 2;
@@ -3116,6 +3345,7 @@ static void PaintSidebar(const SSurf* s, const SecondScreenSnapshot* snap, Targe
 /*  Tab bar                                                            */
 /* ------------------------------------------------------------------ */
 
+#ifndef TMC_3DS
 /* One tab: the pause menu's labelled button (9.png's SLEEP/SAVE plate).
  * The tab that owns the panel is the SAME button at the SAME geometry,
  * drawn in the button's own pressed state and wearing a thin gold keyline
@@ -3184,6 +3414,7 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
     DrawPixelArt(s, kCogArt, 9, floorf((sx0 + sx1) / 2 - 4.5f * cog), floorf(y + bh / 2 - 4.5f * cog), cog,
                  Port_SecondScreenTheme_Color(SSC_BANNER_NAVY));
 }
+#endif
 
 /* ------------------------------------------------------------------ */
 /*  Frame composition                                                  */
@@ -3194,7 +3425,6 @@ static void PaintTabBar(const SSurf* s, TargetList* tl, float u, int32_t ts, int
  * average with ~89 ms peaks, which is the largest CPU cost left on the Old 3DS,
  * but the total alone does not say which phase to attack -- and guessing that
  * from reading the code is how earlier optimisation attempts went wrong. */
-extern unsigned long long Platform3DS_SystemTick(void);
 enum { SS_PHASE_BACKDROP, SS_PHASE_PANEL, SS_PHASE_SIDEBAR, SS_PHASE_TABBAR, SS_PHASE_COUNT };
 static unsigned long long sSsPhaseTicks[SS_PHASE_COUNT];
 static unsigned long long sSsPhaseMax[SS_PHASE_COUNT];
@@ -3232,23 +3462,87 @@ void Port_SecondScreen_PhaseTicks(unsigned long long* totals, unsigned long long
 #endif
 
 #ifdef TMC_3DS
-static void PaintUnavailableWorldMap(const SSurf* s, int x0, int y0, int x1, int y1) {
-    /* No terrain, hints, player marker or map hit targets before ITEM_MAP.
-     * Keep the other tabs and equipment available during the prologue. */
-    int32_t w, h;
-    const uint32_t* frame = Port_SecondScreenWorldMap_GetFrameImage(&w, &h);
-    if (frame) {
-        float scale = WholeMapScale(x1 - x0, y1 - y0);
-        float ox = (x0 + x1) * 0.5f - WholeMapCenterX(x1 - x0, scale) * scale;
-        float oy = (y0 + y1) * 0.5f - (WMAP_CROP_Y0 + WMAP_CROP_Y1) * 0.5f * scale;
-        BlitMapRegion(s, frame, w, h, ox, oy, scale, x0, y0, x1, y1);
-    }
+/* Windcrest text IDs from the room-entry and overworld region tables. */
+static const char* const kMapNames[] = {
+    [0x0b] = "贡戈山", [0x0c] = "贡戈山麓", [0x0d] = "塔班塔秘境", [0x0e] = "风之遗迹",
+    [0x0f] = "王家山谷", [0x10] = "奇洛利亚高原", [0x11] = "西部森林", [0x12] = "海拉鲁城庭院",
+    [0x13] = "北海拉鲁平原", [0x14] = "海拉鲁镇", [0x15] = "南海拉鲁平原", [0x16] = "塞拉泉",
+    [0x17] = "塞拉瀑布", [0x18] = "隆隆牧场", [0x19] = "东部丘陵", [0x1a] = "云上世界",
+    [0x1b] = "海利亚湖", [0x1c] = "小人森林", [0x1d] = "元素圣域", [0x1e] = "小人村",
+    [0x1f] = "梅拉利矿山", [0x20] = "森林神庙", [0x21] = "火焰洞窟", [0x22] = "风之要塞",
+    [0x23] = "露水神殿", [0x24] = "王家密室", [0x25] = "风之宫殿", [0x26] = "海拉鲁城",
+    [0x27] = "暗海拉尔城", [0x28] = "大鼓隆洞窟",
+};
+
+static const char* MapNameForText(unsigned index) {
+    const unsigned entry = index & 0xffu;
+    return (index >> 8) == 7 && entry < sizeof(kMapNames) / sizeof(kMapNames[0]) ? kMapNames[entry] : NULL;
+}
+
+static const char* CurrentMapName(const SecondScreenSnapshot* snap, bool dungeon) {
+    const char* name = MapNameForText(Port_SecondScreenWorldMap_GetAreaNameText(snap->area));
+    if (name == NULL && dungeon && snap->dungeonIdx < sizeof(kDungeonNames) / sizeof(kDungeonNames[0]))
+        name = kDungeonNames[snap->dungeonIdx];
+    int32_t region;
+    if (name == NULL && sLastFix.valid && Port_SecondScreenWorldMap_GetRegionAt(
+            sLastFix.mapX, sLastFix.mapY, &region, NULL, NULL, NULL, NULL))
+        name = MapNameForText(Port_SecondScreenWorldMap_GetRegionNameText(region));
+    return name;
+}
+
+static void ClearUnavailableWorldMap(void) {
+    /* No terrain, player marker or map hit target before ITEM_MAP. */
     sCam.valid = 0;
     sLastFix.valid = 0;
     UI_LOCK();
     sUi.mapLive = 0;
     sUi.regionState = SS_REGION_OFF;
     UI_UNLOCK();
+}
+#endif
+
+#ifdef TMC_3DS
+static void PaintLiveFooter(const SSurf* s, TargetList* tl, const char* text, unsigned item, bool confirm) {
+    Port_SecondScreen_3DS_DrawPauseButton(s->px, s->stride, 16, 210, 54, 24, SS_PAUSE_ICON_SAVE);
+    Port_SecondScreen_3DS_DrawPauseButton(s->px, s->stride, 250, 210, 54, 24,
+                                         confirm ? SS_PAUSE_ICON_BACK : SS_PAUSE_ICON_SETTINGS);
+    AddTarget(tl, 16, 210, 70, 234, confirm ? SS_ACT_LIVE_CONFIRM : SS_ACT_LIVE_SAVE, 0);
+    AddTarget(tl, 250, 210, 304, 234, confirm ? SS_ACT_LIVE_CANCEL : SS_ACT_LIVE_SETTINGS, 0);
+    DrawLabelPlate(s, 76, 211, 244, 232, SS_PLATE_DARK);
+    if (item) {
+        Port_Text_DrawItemName(s->px + 213 * s->stride + 80, 160, 17, s->stride, 0, item,
+                               Port_SecondScreenTheme_ItemNamePalette());
+    } else {
+        MenuTextCentered(s, text, 160, 221, 1, SS_TEXT_WHITE);
+    }
+}
+
+static void PaintLiveInventory(const SSurf* s, TargetList* tl, const SecondScreenSnapshot* snap, int selected) {
+    MenuTextCentered(s, "物品", 77, 55, 1, SS_TEXT_INK);
+    MenuTextCentered(s, "收集", 216, 55, 1, SS_TEXT_INK);
+    Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, 24, 173, 112, 23, 1);
+    for (int i = 0; i < SECOND_SCREEN_ITEM_SLOTS; ++i) {
+        const bool bottle = i >= 12;
+        const int x = 24 + (bottle ? (i - 12) * 28 : (i % 3) * 39);
+        const int y = bottle ? 173 : 68 + (i / 3) * 26;
+        const int w = bottle ? 28 : 32;
+        const uint8_t item = snap->menuItems[i];
+        uint8_t art = item;
+        if (bottle && item && snap->bottleContents[i - 12]) art = snap->bottleContents[i - 12];
+        if (!bottle) Port_SecondScreenTheme_DrawWell(s->px, s->w, s->h, s->stride, x, y, w, 23, 1);
+        Port_SecondScreenRender_DrawItemIcon(s->px, s->w, s->h, s->stride, x + (w - 16) / 2, y + 2, 1, art);
+        DrawItemAmmoCount(s, snap, art, x + w - 14, y + 11, 1);
+        if (i == selected || i == snap->equippedSlotA || i == snap->equippedSlotB)
+            Port_SecondScreenTheme_DrawBrackets(s->px, s->w, s->h, s->stride, x, y, w, 23, 1,
+                Port_SecondScreenTheme_Color(i == selected ? SSC_MENU_RED : SSC_BORDER_LIGHT));
+        if (item) AddTarget(tl, x, y, x + w, y + 23, SS_ACT_LIVE_PICK, i);
+    }
+    Port_SecondScreen_3DS_DrawCombinedCollection(s->px, s->stride, snap);
+    int x, y, w, h;
+    if (snap->kinstoneBagOwned && Port_SecondScreen_3DS_CombinedCollectionRect(0, &x, &y, &w, &h))
+        AddTarget(tl, x, y, x + w, y + h, SS_ACT_QUESTVIEW, SS_QUEST_KINSTONES);
+    if (snap->swordSkills && Port_SecondScreen_3DS_CombinedCollectionRect(2, &x, &y, &w, &h))
+        AddTarget(tl, x, y, x + w, y + h, SS_ACT_QUESTVIEW, SS_QUEST_TECHNIQUES);
 }
 #endif
 
@@ -3349,7 +3643,11 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
     Port_SecondScreenTheme_DrawBackdrop(s.px, s.w, s.h, s.stride, 0, 0, s.w, s.h, ts);
     SS_MARK(SS_PHASE_BACKDROP);
 
-    float tabH = 96 * u;
+#ifdef TMC_3DS
+    const float tabH = 0;
+#else
+    const float tabH = 96 * u;
+#endif
     float sideW = 220 * u; /* widened for the grown rings/chip; map stays dominant */
     float mx0 = 10 * u, my0 = 10 * u;
     float mx1 = tab == SS_TAB_SETTINGS ? width - 10 * u : width - sideW - 4 * u;
@@ -3357,18 +3655,74 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
 
     TargetList tl = { .n = 0 };
 
+#ifdef TMC_3DS
+    if (tab == SS_TAB_SETTINGS) {
+        PaintSettingsSlab(&s, snap, &tl, u, ts, settingsPage, tick, dumpFlashUntil, loadStateFlashUntil,
+                          loadStateResult);
+    } else if (tab == SS_TAB_ITEMS && questView != SS_QUEST_MAIN) {
+        const int x = (s.w - 240) / 2;
+        const int y = (s.h - 160) / 2;
+        PaintQuestPanel(&s, snap, &tl, x, y, x + 240, y + 160, u, ts, tick, questView);
+    } else {
+        const bool inventory = tab == SS_TAB_ITEMS;
+        UI_LOCK();
+        const int selected = (int)sUi.liveItem - 1;
+        const bool confirm = sUi.saveConfirm;
+        const int saveResult = sUi.saveResult;
+        UI_UNLOCK();
+        Port_SecondScreenTheme_DrawPlate(s.px, s.w, s.h, s.stride, 12, 38, 296, 168, 1);
+        Port_SecondScreen_3DS_DrawPauseTitle(s.px, s.stride, inventory ? "物品与收集" : "地图");
+        BottomPauseHud3DS_DrawEquipment(s.px, s.stride, snap);
+        AddTarget(&tl, 0, 8, 112, 31, SS_ACT_TAB, inventory ? SS_TAB_MAP : SS_TAB_ITEMS);
+        const char* mapName = NULL;
+        if (inventory) {
+            PaintLiveInventory(&s, &tl, snap, selected);
+        } else {
+            const int x0 = 24, y0 = 51, x1 = 225, y1 = 193;
+            BottomPauseHud3DS_DrawStatus(s.px, s.stride, snap);
+            if (isDungeon)
+                PaintDungeon(&s, snap, &tl, x0, y0, x1, y1, u, 1, tick, returnCfg);
+            else if (!snap->hasWorldMap)
+                ClearUnavailableWorldMap();
+            else if (regionState == SS_REGION_VIEW && PaintRegion(&s, snap, &tl, x0, y0, x1, y1, u, tick, regionId))
+                mapName = MapNameForText(Port_SecondScreenWorldMap_GetRegionNameText(regionId));
+            else {
+                if (regionState == SS_REGION_VIEW) Port_SecondScreen_3DS_ExitRegion();
+                PaintOverworld(&s, snap, &tl, x0, y0, x1, y1, u, tick, wholeMap, followCfg, crestCfg, tick);
+            }
+            if (mapName == NULL) mapName = CurrentMapName(snap, isDungeon);
+        }
+        const char* text = confirm ? "确认保存？" : saveResult == 1 ? "已保存" : saveResult == 2 ? "暂无法保存" :
+                           inventory ? "点选物品" : (mapName ? mapName : "地图");
+        unsigned item = 0;
+        if (inventory && !confirm && saveResult == 0 && (unsigned)selected < SECOND_SCREEN_ITEM_SLOTS) {
+            item = snap->menuItems[selected];
+            if (item && selected >= 12 && snap->bottleContents[selected - 12])
+                item = snap->bottleContents[selected - 12];
+        }
+        if (confirm) tl.n = 0;
+        PaintLiveFooter(&s, &tl, text, item, confirm);
+    }
+    SS_MARK(SS_PHASE_PANEL);
+    ++sSsPhasePaints;
+#else
     if (tab == SS_TAB_ITEMS) {
         PaintItemsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, armedRing);
     } else if (tab == SS_TAB_QUEST) {
         PaintQuestPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, questView);
     } else if (tab == SS_TAB_SETTINGS) {
+#ifdef TMC_3DS
+        PaintSettingsSlab(&s, snap, &tl, u, ts, settingsPage, tick, dumpFlashUntil, loadStateFlashUntil,
+                          loadStateResult);
+#else
         PaintSettingsPanel(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, settingsPage, tick, dumpFlashUntil,
                            loadStateFlashUntil, loadStateResult);
+#endif
     } else if (isDungeon) {
         PaintDungeon(&s, snap, &tl, mx0, my0, mx1, my1, u, ts, tick, returnCfg);
 #ifdef TMC_3DS
     } else if (!snap->hasWorldMap) {
-        PaintUnavailableWorldMap(&s, (int32_t)mx0, (int32_t)my0, (int32_t)mx1, (int32_t)my1);
+        ClearUnavailableWorldMap();
 #endif
     } else {
         /* A live region zoom replaces the map area; if its art can't be
@@ -3395,10 +3749,11 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
                      armedRing);
     }
     SS_MARK(SS_PHASE_SIDEBAR);
+#ifndef TMC_3DS
     PaintTabBar(&s, &tl, u, ts, tab);
-    SS_MARK(SS_PHASE_TABBAR);
-#ifdef TMC_3DS
+#else
     ++sSsPhasePaints;
+#endif
 #endif
 #ifdef TMC_3DS
     if (randoConfirmActive) {
@@ -3444,7 +3799,12 @@ static int PickMapRegion(int x, int y) {
             sUi.regionX1 = rx1;
             sUi.regionY1 = ry1;
             sUi.regionTick = sUi.lastTick;
+#ifdef TMC_3DS
+            sUi.regionViewport.ready = false;
+            sUi.regionState = SS_REGION_VIEW;
+#else
             sUi.regionState = SS_REGION_BRACKET;
+#endif
             picked = 1;
         }
     }
@@ -3483,23 +3843,54 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             sUi.armedRing = 0;             /* changing tabs cancels a pending assignment */
             sUi.questView = SS_QUEST_MAIN; /* ...and closes a list left open */
             sUi.settingsPage = SS_SETTINGS_ROOT;
+#ifdef TMC_3DS
+            sUi.liveItem = sUi.saveConfirm = sUi.saveResult = 0;
+#endif
             UI_UNLOCK();
             break;
+#ifdef TMC_3DS
+        case SS_ACT_LIVE_PICK:
+            UI_LOCK();
+            sUi.liveItem = hit.arg + 1;
+            sUi.saveResult = 0;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_LIVE_SAVE:
+        case SS_ACT_LIVE_CANCEL:
+            UI_LOCK();
+            sUi.saveConfirm = hit.action == SS_ACT_LIVE_SAVE;
+            sUi.saveResult = 0;
+            UI_UNLOCK();
+            break;
+        case SS_ACT_LIVE_CONFIRM: {
+            extern bool Port_SaveLiveGame3DS(void);
+            const bool saved = Port_SaveLiveGame3DS();
+            UI_LOCK();
+            sUi.saveConfirm = 0;
+            sUi.saveResult = saved ? 1 : 2;
+            UI_UNLOCK();
+            break;
+        }
+        case SS_ACT_LIVE_SETTINGS:
+            Port_SecondScreen_3DS_OpenSettings();
+            break;
+#endif
         case SS_ACT_SETTINGS_PAGE:
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();
 #ifdef TMC_3DS
-            if (hit.arg == SS_SETTINGS_UPDATE) {
-                UpdateUI_Reset();
-                UpdateStatus status;
-                Updater_GetStatus(&status);
-                if (status.state != UPDATE_AVAILABLE)
-                    Updater_Check();
-            }
+            if (hit.arg == SS_SETTINGS_UPDATE)
+                BeginUpdatePage();
 #endif
             break;
         case SS_ACT_SETTINGS_BACK:
+#ifdef TMC_3DS
+            if (hit.arg == SS_SETTINGS_CLOSE) {
+                Port_SecondScreen_3DS_CloseSettings();
+                break;
+            }
+#endif
             UI_LOCK();
             sUi.settingsPage = hit.arg;
             UI_UNLOCK();
@@ -3564,8 +3955,19 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
         case SS_ACT_QUESTVIEW:
             UI_LOCK();
             sUi.questView = hit.arg;
+#ifdef TMC_3DS
+            sUi.techniqueSelection = 0;
+#endif
             UI_UNLOCK();
             break;
+#ifdef TMC_3DS
+        case SS_ACT_TECHNIQUE:
+            UI_LOCK();
+            if (sUi.questView == SS_QUEST_TECHNIQUES)
+                sUi.techniqueSelection = hit.arg + 1;
+            UI_UNLOCK();
+            break;
+#endif
         case SS_ACT_RING:
             UI_LOCK();
             sUi.armedRing = (sUi.armedRing == hit.arg) ? 0 : hit.arg;
@@ -3614,6 +4016,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
                     break;
                 case SS_SET_DISPLAY_STYLE:
                     Port_Config_Cycle3DSDisplayStyle();
+                    break;
+                case SS_SET_STEREO_WORLD:
+                    Port_Config_SetStereoWorld(!Port_Config_GetStereoWorld());
                     break;
 #endif
                 case SS_SET_FOLLOW:
@@ -3713,6 +4118,9 @@ void Port_SecondScreen_OnTap(int x, int y, int longPress) {
             UI_LOCK();
             if (sUi.regionState != SS_REGION_OFF) {
                 sUi.regionState = SS_REGION_OFF;
+#ifdef TMC_3DS
+                sUi.regionViewport.ready = false;
+#endif
             } else {
                 sUi.wholeMap = 0;
             }

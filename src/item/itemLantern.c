@@ -81,7 +81,7 @@ void sub_08075B54(ItemBehavior* this, u32 index) {
 
     if ((gPlayerState.flags & (PL_CAPTURED | PL_DISABLE_ITEMS)) == 0) {
         equipSlot = IsItemEquipped(this->behaviorId);
-        if (!(((IsItemActivatedThisFrame(this) == 0) && (equipSlot < EQUIP_SLOT_NONE)) ||
+        if (!(((IsItemActivatedThisFrame(this) == 0) && (equipSlot != EQUIP_SLOT_NONE)) ||
               (gPlayerState.jump_status != 0))) {
             ForceEquipItem(ITEM_LANTERN_OFF, equipSlot);
             gPlayerState.flags &= ~PL_USE_LANTERN;

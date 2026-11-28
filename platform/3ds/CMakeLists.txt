@@ -89,7 +89,8 @@ set(TMC_PORT_SOURCES
     port/port_rom_hash.c port/port_rom_profile.c port/port_text_codec.c
     port/port_stubs.c port/stubs_autogen.c port/data_stubs_autogen.c
     port/data_const_stubs.c port/flag_remap_generated.c port/port_rom_tables.c
-    port/port_linked_stubs.c port/port_widescreen.c port/port_figurines.c port/port_draw.c
+    port/port_linked_stubs.c port/port_3ds_full_view_policy.c port/port_figurines.c port/port_draw.c
+    port/port_zone_tiles.c port/port_neighbour_rooms.c
     port/port_gba_mem.c port/port_hdma.c port/port_save.c port/port_softslots.c
     port/port_dump_state.c
     port/port_second_screen_state.c
@@ -128,6 +129,8 @@ add_executable(tmc-3ds
     source/top_view_3ds.c
     source/platform_gpu_3ds.c
     source/bottom_idle_3ds.c
+    source/bottom_pause_hud_3ds.c
+    source/boot_screen_3ds.c
     source/bottom_frame_state_3ds.c
     source/bottom_map_anim_3ds.c
     source/speaker_eq_3ds.c
@@ -136,6 +139,11 @@ add_executable(tmc-3ds
     source/port_ppu_3ds.c
     source/port_ppu_gpu_3ds_model.c
     source/port_ppu_gpu_3ds.c
+    source/fade_gpu_3ds.c
+    source/scene_pictures_3ds.c
+    source/stereo_3ds.c
+    source/title_rays_3ds.c
+    source/zone_depth_3ds.c
     source/port_audio_3ds.c
     source/port_config_3ds.c
     source/port_dump_state_3ds.c
@@ -205,30 +213,19 @@ find_library(TMC_UPDATE_ZLIB NAMES z PATHS "${UPDATE_DEPS_ROOT}/lib"
 if(TMC_UPDATE_ZLIB)
     target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto "${TMC_UPDATE_ZLIB}" ctru m ppu_gpu_3ds_shader_bin)
 else()
-    target_link_libraries(tmc-3ds PRIVATE citro2d citro3d curl jansson mbedtls mbedx509 mbedcrypto ctru m ppu_gpu_3ds_shader_bin)
+    message(FATAL_ERROR "3DS portlibs zlib is required")
 endif()
 
 set(TMC_ROMFS "${CMAKE_CURRENT_BINARY_DIR}/romfs")
-file(MAKE_DIRECTORY "${TMC_ROMFS}")
+file(MAKE_DIRECTORY "${TMC_ROMFS}/wide-scenes")
+file(GLOB TMC_WIDE_SCENE_ASSETS CONFIGURE_DEPENDS "${CMAKE_CURRENT_LIST_DIR}/romfs/wide-scenes/*.bin")
+foreach(asset IN LISTS TMC_WIDE_SCENE_ASSETS)
+    get_filename_component(asset_name "${asset}" NAME)
+    configure_file("${asset}" "${TMC_ROMFS}/wide-scenes/${asset_name}" COPYONLY)
+endforeach()
 configure_file("${CMAKE_CURRENT_LIST_DIR}/romfs/update-ca.pem" "${TMC_ROMFS}/update-ca.pem" COPYONLY)
 configure_file(
     "${CMAKE_CURRENT_LIST_DIR}/romfs/splash.rgb565"
     "${TMC_ROMFS}/splash.rgb565"
     COPYONLY
-)
-
-set(TMC_SMDH "${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds.smdh")
-ctr_generate_smdh(
-    OUTPUT "${TMC_SMDH}"
-    NAME "The Minish Cap 3DS v${TMC_3DS_VERSION}"
-    DESCRIPTION "Native Nintendo 3DS port"
-    AUTHOR "Esteban PDN / Project Picori / samyost1"
-    ICON "${CMAKE_CURRENT_LIST_DIR}/assets/icon-48.png"
-)
-
-ctr_create_3dsx(tmc-3ds-3dsx
-    TARGET tmc-3ds
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tmc-3ds-v${TMC_3DS_VERSION}.3dsx"
-    SMDH "${TMC_SMDH}"
-    ROMFS "${TMC_ROMFS}"
 )

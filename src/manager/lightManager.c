@@ -22,6 +22,18 @@ extern void sub_0801E120(void);
 extern void sub_0801E154(u32);
 extern void sub_0801E160(u32, u32, u32);
 
+#ifdef PC_PORT
+#include "port_widescreen.h"
+
+/* A wide view draws the light across the whole view (Port_Widescreen_Win0Lines):
+ * WIN0's 8-bit table stops at x=255 and y=159, the view does not. */
+static void LightCircle(u32 x, u32 y, u32 radius) {
+    sub_0801E160(x, y, radius);
+    Port_Widescreen_NoteLightCircle((s32)x, (s32)y, (s32)radius);
+}
+#define sub_0801E160 LightCircle
+#endif
+
 bool32 LerpLightLevel();
 void UpdateLightAlpha();
 

@@ -1,16 +1,12 @@
 #ifndef TOP_VIEW_3DS_H
 #define TOP_VIEW_3DS_H
 
-/* Logical source geometry for the native 160-line renderer. */
-typedef struct TopView3DSSource {
-    int renderWidth, renderHeight;
-    int sourceX, sourceY, sourceWidth, sourceHeight;
-} TopView3DSSource;
+#include "port_3ds_full_view_policy.h"
 
 enum {
     TOP_VIEW_3DS_ASPECT_WIDE = 0,
+    TOP_VIEW_3DS_ASPECT_WIDE_AI,
     TOP_VIEW_3DS_ASPECT_ORIGINAL,
-    TOP_VIEW_3DS_ASPECT_STRETCH,
 };
 
 enum {
@@ -20,7 +16,8 @@ enum {
 };
 
 typedef struct TopView3DSPlan {
-    TopView3DSSource source;
+    Port3DSFullViewMode mode;
+    Port3DSFullViewPresentation source;
     int drawX;
     int drawY;
     int drawWidth;
@@ -30,9 +27,28 @@ typedef struct TopView3DSPlan {
     int sharpBilinearScale;
 } TopView3DSPlan;
 
-/* Pure presentation policy shared by CPU uploads and the GPU texture path.
- * Aspect and filter are independent. Pixel Perfect centers the native source
- * without changing camera geometry; Blur/Bilinear retain their existing scaling. */
-void TopView3DS_BuildPlan(int aspect, int displayStyle, int renderWidth, TopView3DSPlan* plan);
+typedef struct TopView3DSPpuCoherence {
+    Port3DSFullViewMode mode;
+    int forceNativeFrame;
+    int clearFullViewProducer;
+} TopView3DSPpuCoherence;
+
+/* Reconcile the freshly selected presentation with the shadow geometry that
+ * was published at the previous VBlank. Present runs before the next
+ * UpdateDisplayControls, so a dialogue/fade may request E2 while the PPU still
+ * owns Full View stride-54 shadows. A mismatch must render one native frame;
+ * reading those shadows as a 266-wide E2 layout is not safe. */
+TopView3DSPpuCoherence TopView3DS_ResolvePpuCoherence(
+    Port3DSFullViewMode selectedMode, int producerFullView);
+
+/* Pure, host-testable plan used directly by platform_gpu_3ds.c. It owns the
+ * final fail-closed hardware/config gate, texture source rectangle, filter and
+ * physical 400x240 draw rectangle; the Citro2D layer only executes this plan. */
+void TopView3DS_BuildPlan(int old3DS, int fullViewComboEnabled,
+                          int aspect, int displayStyle,
+                          Port3DSFullViewMode requestedMode,
+                          int renderWidth, int renderHeight,
+                          int validSourceWidth, int validSourceHeight,
+                          int cropX, int cropY, TopView3DSPlan* plan);
 
 #endif /* TOP_VIEW_3DS_H */

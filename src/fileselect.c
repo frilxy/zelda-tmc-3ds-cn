@@ -35,6 +35,7 @@
 #include "port_runtime_config.h"
 #include "port_save.h"
 #include "port_tts.h"
+#include "port_widescreen.h"
 #endif
 #include <stdio.h>
 
@@ -999,7 +1000,16 @@ void FileSelectTask(void) {
     UpdateEntities();
     sub_0805066C();
     UpdateUIElements();
+#ifdef PC_PORT
+    {
+        /* At 400x240 the R button and its label leave together (port_draw.c). */
+        const int group = Port_Draw_WideGroupBegin();
+        DrawUIElements();
+        Port_Draw_WideGroupEnd(group);
+    }
+#else
     DrawUIElements();
+#endif
     DrawEntities();
     CopyOAM();
     if (gFileSelectState.unk3 != gSaveHeader->language) {
