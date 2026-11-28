@@ -617,7 +617,6 @@ static void PollInput(void) {
     }
 
     sBottomCapturedKeys &= sHeld;
-    if ((sDown & KEY_B) && Port_SecondScreen_3DS_BackFromRegion()) sBottomCapturedKeys |= KEY_B;
     static const uint32_t itemKeys[] = {KEY_A, KEY_B, KEY_X, KEY_Y};
     for (unsigned button = 0; button < sizeof(itemKeys) / sizeof(itemKeys[0]); ++button) {
         const uint32_t key = itemKeys[button];

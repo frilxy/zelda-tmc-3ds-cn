@@ -1725,7 +1725,7 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
     if (sUi.regionState == SS_REGION_VIEW && sUi.regionId == region)
         sUi.regionViewport.ready = true;
     UI_UNLOCK();
-    (void)tl; /* The region viewport takes drags. B returns to the overview. */
+    (void)tl; /* The region viewport takes drags; Back lives in the right column. */
 #else
     float chip[4];
     DrawMapIconChipAt(s, "\u21a9", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
