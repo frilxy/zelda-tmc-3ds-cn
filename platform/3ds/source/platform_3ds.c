@@ -607,11 +607,16 @@ static void PollInput(void) {
             dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
             dragged = false;
         }
-        if (dragReady && (dragged || abs((int)touch.px - touchX) + abs((int)touch.py - touchY) >= 4)) {
+        if (dragged || abs((int)touch.px - touchX) + abs((int)touch.py - touchY) >= 4) {
             dragged = true;
-            Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX, (int)touch.py - lastY);
-            lastX = touch.px;
-            lastY = touch.py;
+            /* The first contact may coincide with a map repaint. Wait for its
+             * hitboxes if necessary, without treating this gesture as a tap. */
+            if (!dragReady) dragReady = Port_SecondScreen_3DS_BeginRegionDrag(touchX, touchY);
+            if (dragReady) {
+                Port_SecondScreen_3DS_DragRegion(touchX, touchY, (int)touch.px - lastX, (int)touch.py - lastY);
+                lastX = touch.px;
+                lastY = touch.py;
+            }
         }
     } else if (touching) {
         touching = false;

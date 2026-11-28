@@ -1,5 +1,11 @@
 # 更新日志（中文版）
 
+## v2.2.13
+
+- 恢复幸福碎片和剑技详情的原版尺寸石板，标题放回石板预留的位置，保留底部返回按钮。
+- 对齐收集区下排三个圆槽，均衡它们与上方菱形、下方长槽的间距。
+- 地图总览取消放大镜。点可查看的区域进入详情，拖动查看，轻点返回总览。
+
 ## v2.2.12
 
 - X／Y 改用与原版 A／B 完全一致的圆形按键底图、配色和阴影。
@@ -120,5 +126,7 @@
 
 ## Changelog
 
-- Match X/Y badges to native A/B.
-- Preserve taps during screen redraws.
+- Restore the original detail slab size.
+- Align the three lower collection slots.
+- Tap to open or exit regional maps.
+- Drag to scroll; remove the zoom icon.

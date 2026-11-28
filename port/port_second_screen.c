@@ -302,7 +302,7 @@ static struct {
     uint32_t regionTick;
 #ifdef TMC_3DS
     struct {
-        TapTarget bounds, back;
+        TapTarget bounds;
         int32_t artW, artH, offsetX, offsetY;
         bool ready;
     } regionViewport;
@@ -1236,6 +1236,7 @@ static float MapTabCenterX(float width, float u) {
     return x0 + 1.5f * bw + gap;
 }
 
+#ifndef TMC_3DS
 /* Square icon chip: the map's zoom / back controls drawn with the body face's
  * own symbols (U+2315 and U+21A9) instead of words, so they match the caption
  * weight and never need hand-drawn pixel art. */
@@ -1254,6 +1255,7 @@ static void DrawMapIconChipAt(const SSurf* s, const char* glyph, float x0, float
     out[2] = x0 + side;
     out[3] = y0 + side;
 }
+#endif
 
 /* Same plate, anchored by its top-left corner instead of its centre. The
  * size is derived exactly the way DrawMapChip derives it, so a chip moved to
@@ -1324,7 +1326,14 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
 
     /* Camera target: follow Link unless the whole map is asked for (or the
      * follow cam is switched off / there is no fix yet). */
-    int wantWhole = wholeMap || !followCfg || !sLastFix.valid;
+#ifdef TMC_3DS
+    /* Every region remains reachable without a separate zoom control. */
+    (void)wholeMap;
+    (void)followCfg;
+    const int wantWhole = 1;
+#else
+    const int wantWhole = wholeMap || !followCfg || !sLastFix.valid;
+#endif
     float tScale = wantWhole ? wholeScale : followScale;
     float tx, ty;
     if (wantWhole) {
@@ -1498,6 +1507,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
     sUi.regionGridReady = (uint8_t)(gridReady != 0);
     UI_UNLOCK();
 
+#ifndef TMC_3DS
     /* Changing the zoom is the chip's job and only the chip's: ZOOM steps
      * between Link's close view and the whole of Hyrule, and stays labelled
      * ZOOM in both because both are somewhere you can zoom from. Only the
@@ -1518,6 +1528,7 @@ static void PaintOverworld(const SSurf* s, const SecondScreenSnapshot* snap, Tar
         DrawMapIconChipAt(s, "\u2315", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
         AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPZOOM, 0);
     }
+#endif
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 }
 
@@ -1546,7 +1557,7 @@ bool Port_SecondScreen_3DS_DragRegion(int x, int y, int dx, int dy) {
     bool changed = false;
     UI_LOCK();
     if (sUi.tab == SS_TAB_MAP && sUi.regionState == SS_REGION_VIEW && sUi.regionViewport.ready &&
-        RegionContains(sUi.regionViewport.bounds, x, y) && !RegionContains(sUi.regionViewport.back, x, y)) {
+        RegionContains(sUi.regionViewport.bounds, x, y)) {
         const TapTarget bounds = sUi.regionViewport.bounds;
         const int32_t nextX = RegionOffset((int64_t)sUi.regionViewport.offsetX + dx,
                                            bounds.x1 - bounds.x0, sUi.regionViewport.artW);
@@ -1684,20 +1695,17 @@ static int PaintRegion(const SSurf* s, const SecondScreenSnapshot* snap, TargetL
         DrawMapMarker(artSurface, dx + px, dy + py, base, (tick & 8) ? RGB(0xF8, 0xF8, 0xF8) : gold);
     }
 
-    float chip[4];
-    /* Same anchor as the zoom chip on the level above: the control lives in
-     * the floor-plaque column, not under the map. */
-    DrawMapIconChipAt(s, "\u21a9", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
-    AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
 #ifdef TMC_3DS
     UI_LOCK();
-    if (sUi.regionState == SS_REGION_VIEW && sUi.regionId == region) {
-        sUi.regionViewport.back = (TapTarget){.x0 = (int32_t)chip[0], .y0 = (int32_t)chip[1],
-                                              .x1 = (int32_t)chip[2], .y1 = (int32_t)chip[3]};
+    if (sUi.regionState == SS_REGION_VIEW && sUi.regionId == region)
         sUi.regionViewport.ready = true;
-    }
     UI_UNLOCK();
+    /* HID dispatches this target only for a tap, never on drag release. */
+    AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAPVIEW, 0);
 #else
+    float chip[4];
+    DrawMapIconChipAt(s, "\u21a9", rx0 + 20 * u + 2.0f, ry0 + 12 * u, u, chip);
+    AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_MAPVIEW, 0);
     AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_MAP, 0);
 #endif
     return 1;
@@ -2001,9 +2009,15 @@ static void PaintQuestPanel(const SSurf* s, const SecondScreenSnapshot* snap, Ta
                         : Port_SecondScreenQuest_DrawTechniques(s->px, s->w, s->h, s->stride, px, py, pw, ph, snap);
         if (drawn) {
             float chip[4];
+#ifdef TMC_3DS
+            DrawMapChip(s, "返回", s->w / 2.0f, s->h - 2 - 12 * u, u, chip);
+#else
             DrawMapChip(s, "返回", (rx0 + rx1) / 2.0f, ry1 - 12 * u, u, chip);
+#endif
             AddTarget(tl, chip[0], chip[1], chip[2], chip[3], SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
+#ifndef TMC_3DS
             AddTarget(tl, rx0, ry0, rx1, ry1, SS_ACT_QUESTVIEW, SS_QUEST_MAIN);
+#endif
             return;
         }
     }
@@ -3570,7 +3584,9 @@ void Port_SecondScreen_PaintInto(uint32_t* pixels, int width, int height, int st
         PaintSettingsSlab(&s, snap, &tl, u, ts, settingsPage, tick, dumpFlashUntil, loadStateFlashUntil,
                           loadStateResult);
     } else if (tab == SS_TAB_ITEMS && questView != SS_QUEST_MAIN) {
-        PaintQuestPanel(&s, snap, &tl, 2, 2, 318, 238, u, ts, tick, questView);
+        const int x = (s.w - 240) / 2;
+        const int y = (s.h - 160) / 2;
+        PaintQuestPanel(&s, snap, &tl, x, y, x + 240, y + 160, u, ts, tick, questView);
     } else {
         const bool inventory = tab == SS_TAB_ITEMS;
         UI_LOCK();
@@ -3697,8 +3713,10 @@ static int PickMapRegion(int x, int y) {
             sUi.regionTick = sUi.lastTick;
 #ifdef TMC_3DS
             sUi.regionViewport.ready = false;
-#endif
+            sUi.regionState = SS_REGION_VIEW;
+#else
             sUi.regionState = SS_REGION_BRACKET;
+#endif
             picked = 1;
         }
     }

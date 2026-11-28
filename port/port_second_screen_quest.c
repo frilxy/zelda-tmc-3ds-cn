@@ -618,6 +618,10 @@ enum {
     COMPACT_DIAMOND_X = 152, COMPACT_DIAMOND_Y = 71,
     COMPACT_DIAMOND_SRC_X = 123, COMPACT_DIAMOND_SRC_Y = 31,
     COMPACT_DIAMOND_WIDTH = 81,
+    COMPACT_DIAMOND_BODY_HEIGHT = 54,
+    COMPACT_ROUND_GROUP_HEIGHT = 79,
+    COMPACT_PASSIVE_ROW_SHIFT = 2,
+    COMPACT_PASSIVE_CENTER_Y = 141,
     COMPACT_TRAY_WIDTH = 82,
     COMPACT_TRAY_X = COMPACT_DIAMOND_X + (COMPACT_DIAMOND_WIDTH - COMPACT_TRAY_WIDTH) / 2,
     COMPACT_TRAY_Y = 158,
@@ -642,7 +646,8 @@ SecondScreenQuestRect Port_SecondScreenQuest_Compact3DSRect(int id) {
         const u8* entry = SlotEntry(kCompactDiamondSlots[id - 4]);
         if (entry != NULL) {
             const int x = entry[6] - COMPACT_DIAMOND_SRC_X + COMPACT_DIAMOND_X;
-            const int y = entry[7] - COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_Y;
+            const int y = id < 8 ? entry[7] - COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_Y
+                                 : COMPACT_PASSIVE_CENTER_Y;
             return (SecondScreenQuestRect){x - 11, y - 11, 22, 22};
         }
     }
@@ -746,10 +751,23 @@ void Port_SecondScreenQuest_DrawCompact3DS(uint32_t* pixels, int stride, const S
     if (pixels == NULL || stride < COMPACT_WIDTH || snap == NULL) return;
     const bool ready = LoadCompactQuestArt();
     if (ready) {
-        const SecondScreenQuestRect circles = {COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, COMPACT_DIAMOND_WIDTH, 79};
-        const SecondScreenQuestRect circlesSrc = {COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, COMPACT_DIAMOND_WIDTH, 79};
+        const SecondScreenQuestRect diamond = {
+            COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y, COMPACT_DIAMOND_WIDTH, COMPACT_DIAMOND_BODY_HEIGHT,
+        };
+        const SecondScreenQuestRect diamondSrc = {
+            COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y, COMPACT_DIAMOND_WIDTH, COMPACT_DIAMOND_BODY_HEIGHT,
+        };
+        const SecondScreenQuestRect passiveRow = {
+            COMPACT_DIAMOND_X, COMPACT_DIAMOND_Y + COMPACT_DIAMOND_BODY_HEIGHT + COMPACT_PASSIVE_ROW_SHIFT,
+            COMPACT_DIAMOND_WIDTH, COMPACT_ROUND_GROUP_HEIGHT - COMPACT_DIAMOND_BODY_HEIGHT,
+        };
+        const SecondScreenQuestRect passiveRowSrc = {
+            COMPACT_DIAMOND_SRC_X, COMPACT_DIAMOND_SRC_Y + COMPACT_DIAMOND_BODY_HEIGHT,
+            passiveRow.w, passiveRow.h,
+        };
         const SecondScreenQuestRect traySrc = {COMPACT_TRAY_SRC_X, COMPACT_TRAY_SRC_Y, COMPACT_TRAY_WIDTH, 23};
-        DrawCompactQuestBg(pixels, stride, circles, circlesSrc);
+        DrawCompactQuestBg(pixels, stride, diamond, diamondSrc);
+        DrawCompactQuestBg(pixels, stride, passiveRow, passiveRowSrc);
         DrawCompactQuestBg(pixels, stride, kCompactTray, traySrc);
     } else {
         Port_SecondScreenTheme_DrawWell(pixels, COMPACT_WIDTH, COMPACT_HEIGHT, stride,
@@ -1110,17 +1128,75 @@ int Port_SecondScreenQuest_Draw(uint32_t* pixels, int32_t bufW, int32_t bufH, in
 typedef void (*ListCellFn)(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t idx, int32_t cx,
                            int32_t cy, int32_t side, int32_t scale, const void* ctx);
 
+#ifdef TMC_3DS
+/* Pause subpages 7 and 8 each load their own BG2 tiles and tilemap, just
+ * like the main quest screen. Palette index zero lets parchment show through. */
+static bool DrawDetailBackdrop(uint32_t* pixels, int32_t stride, int32_t dstX, int32_t dstY,
+                               bool techniques) {
+    const u32 group = techniques ? 126u : 125u;
+    u32 mapLen, tilesLen;
+    const u8* map = QuestTilemap(group, &mapLen);
+    const u8* tiles = Port_ResolveGfxGroupVram(group, QUEST_TILES_DEST, &tilesLen);
+    if (map == NULL || tiles == NULL || mapLen < 32u * (QUEST_H / 8) * 2u) return false;
+
+    uint16_t palette[256] = {0};
+    ApplyPaletteGroup(11u, palette);
+    ApplyPaletteGroup(12u, palette);
+    ApplyPaletteGroup(181u, palette);
+    ApplyPaletteGroup(techniques ? 205u : 204u, palette);
+    uint32_t colors[256];
+    for (unsigned i = 0; i < 256; ++i) colors[i] = Rgb555ToRgba8888(palette[i]);
+
+    for (int y = 0; y < QUEST_H; ++y) {
+        uint32_t* row = pixels + (dstY + y) * stride + dstX;
+        for (int x = 0; x < QUEST_W; ++x) {
+            const u16 entry = Port_ReadU16(map + ((y / 8) * 32 + x / 8) * 2);
+            const unsigned tx = (x & 7) ^ ((entry & 0x400) ? 7 : 0);
+            const unsigned ty = (y & 7) ^ ((entry & 0x800) ? 7 : 0);
+            const u32 off = (entry & 0x3ffu) * 32u + ty * 4u + tx / 2u;
+            if (off >= tilesLen) continue;
+            const u8 color = (tiles[off] >> ((tx & 1u) * 4u)) & 15u;
+            if (color != 0) row[x] = colors[(entry >> 12) * 16u + color];
+        }
+    }
+    return true;
+}
+#endif
+
 static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride, int32_t dstX, int32_t dstY,
-                    int32_t dstW, int32_t dstH, const char* title, int32_t count, ListCellFn fill, const void* ctx) {
+                    int32_t dstW, int32_t dstH, const char* title, bool techniques, int32_t count, ListCellFn fill,
+                    const void* ctx) {
+#ifdef TMC_3DS
+    if (dstW != QUEST_W || dstH != QUEST_H || dstX < 0 || dstY < 0 ||
+        dstX + dstW > bufW || dstY + dstH > bufH) return 0;
+    const bool nativeArt = DrawDetailBackdrop(pixels, stride, dstX, dstY, techniques);
+    if (!nativeArt) {
+        Port_SecondScreenTheme_DrawPlate(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, 1);
+        Port_SecondScreenTheme_DrawWell(pixels, bufW, bufH, stride, dstX + 35, dstY + 6, 136, 21, 1);
+    }
+    const int32_t titleW = Port_SecondScreenTheme_TitleTextWidth(title, 1);
+    const int32_t titleY = Port_SecondScreenTheme_InkTopForCenter(dstY + 16, 1, SS_FACE_LARGE);
+    Port_SecondScreenTheme_DrawTitleText(pixels, bufW, bufH, stride, dstX + 103 - titleW / 2, titleY, 1,
+                                         SS_TEXT_NAVY, title);
+
+    /* The bag has 11 native cells, four across on the first two rows. The
+     * techniques page lines up its eight scrolls in one row at y=47. */
+    const int limit = techniques ? 8 : 11;
+    for (int i = 0; i < limit; ++i) {
+        const int side = techniques ? 24 : 32;
+        const int x = dstX + (techniques ? 12 + 27 * i : 27 + 48 * (i % 4));
+        const int y = dstY + (techniques ? 35 : 36 + 36 * (i / 4));
+        if (!nativeArt) Port_SecondScreenTheme_DrawWell(pixels, bufW, bufH, stride, x, y, side, side, 1);
+        if (i < count) fill(pixels, bufW, bufH, stride, i, x, y, side, 1, ctx);
+    }
+    return 1;
+#else
     int32_t scale, pad, innerX, innerY, innerW, innerH;
     int32_t cols, rows, cell, gap, gridW, gridH, ox, oy, i;
 
-#ifndef TMC_3DS
     (void)title;
-    if (count <= 0) {
-        return 0;
-    }
-#endif
+    (void)techniques;
+    if (count <= 0) return 0;
     scale = (dstW < dstH ? dstW : dstH) / 200;
     if (scale < 1) {
         scale = 1;
@@ -1132,17 +1208,6 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
     innerY = dstY + 3 * pad / 2;
     innerW = dstW - 3 * pad;
     innerH = dstH - 3 * pad;
-#ifdef TMC_3DS
-    /* Draw directly on the stone header and keep the grid clear of both
-     * the heading and the existing Back button. */
-    const int32_t titleW = Port_SecondScreenTheme_TitleTextWidth(title, scale);
-    const int32_t titleY = Port_SecondScreenTheme_InkTopForCenter(innerY + 8 * scale, scale, SS_FACE_LARGE);
-    Port_SecondScreenTheme_DrawTitleText(pixels, bufW, bufH, stride, dstX + (dstW - titleW) / 2, titleY, scale,
-                                         SS_TEXT_NAVY, title);
-    if (count <= 0) return 1;
-    innerY += 24 * scale;
-    innerH -= (24 + 16) * scale;
-#endif
 
     /* Widest grid whose cells still fit the rect: more columns means smaller
      * cells, so walk up from one and keep the last that beats the previous. */
@@ -1177,6 +1242,7 @@ static int DrawList(uint32_t* pixels, int32_t bufW, int32_t bufH, int32_t stride
         fill(pixels, bufW, bufH, stride, i, cx, cy, side, scale, ctx);
     }
     return 1;
+#endif
 }
 
 /* --- KINSTONE PIECES (pause screen 7) --- */
@@ -1268,7 +1334,7 @@ int Port_SecondScreenQuest_DrawKinstones(uint32_t* pixels, int32_t bufW, int32_t
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "幸福碎片", KinstoneRowCount(snap),
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "幸福碎片", false, KinstoneRowCount(snap),
                     KinstoneListCell, snap);
 }
 
@@ -1303,6 +1369,6 @@ int Port_SecondScreenQuest_DrawTechniques(uint32_t* pixels, int32_t bufW, int32_
     if (pixels == NULL || snap == NULL || dstW <= 0 || dstH <= 0 || !Port_SecondScreenTheme_Ready()) {
         return 0;
     }
-    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "剑技", TECHNIQUE_COUNT, TechniqueListCell,
+    return DrawList(pixels, bufW, bufH, stride, dstX, dstY, dstW, dstH, "剑技", true, TECHNIQUE_COUNT, TechniqueListCell,
                     snap);
 }
