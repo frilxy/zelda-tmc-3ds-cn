@@ -23,6 +23,22 @@ typedef struct {
     /*0x83*/ u8 unk_83;
 } ChuchuEntity;
 
+#ifdef PC_PORT
+extern int Port_IsValidEntityAddr(const void* p); /* entity.c */
+#endif
+
+/* unk_68 is Enemy::child, the FX EnemyCreateFX attaches. A Chuchu that never made
+ * one can hold a stale non-entity value there (0x160 after closing the pause menu
+ * in the Minish Woods, 2026-10-13: a crash reading its type). The GBA read through
+ * it harmlessly; on the port the pointer must be an entity (as enemyUtils.c checks). */
+static bool32 ChuchuChildValid(ChuchuEntity* this) {
+#ifdef PC_PORT
+    return this->unk_68 != NULL && Port_IsValidEntityAddr(this->unk_68);
+#else
+    return this->unk_68 != NULL;
+#endif
+}
+
 void sub_0801F328(ChuchuEntity* this);
 void sub_0801F340(ChuchuEntity* this);
 void sub_0801F360(ChuchuEntity* this);
@@ -81,7 +97,7 @@ void Chuchu(ChuchuEntity* this) {
     }
     this->unk_81 = index;
     Chuchu_Functions[GetNextFunction(super)](this);
-    if (this->unk_68 != NULL && this->unk_68->type == 0x1c) {
+    if (ChuchuChildValid(this) && this->unk_68->type == 0x1c) {
         EnemySetFXOffset(super, 0, 1, -0x10);
     } else if (super->type == 2) {
         sub_0801FB34(this);
@@ -688,7 +704,7 @@ void sub_0801FB14(ChuchuEntity* this) {
 }
 
 void sub_0801FB34(ChuchuEntity* this) {
-    if (this->unk_68) {
+    if (ChuchuChildValid(this)) {
         sub_0806FA90(super, this->unk_68, (s8)gUnk_080CA2B4[super->frame & 0xf], 1);
         (this->unk_68)->spriteOffsetY--;
     }

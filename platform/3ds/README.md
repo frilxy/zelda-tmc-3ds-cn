@@ -7,11 +7,7 @@ touching it opens the existing Minish Cap Settings hierarchy.
 
 ## Console Installation
 
-Install the CIA built for your ROM family:
-
-```text
-tmc-3ds-v1.3-E3.cia
-```
+Install the CIA built for your ROM family. GitHub Releases provides the JP build for clean Japanese and Angel Team SP4 ROMs. [Releases](https://github.com/frilxy/zelda-tmc-3ds-cn/releases)
 
 Then create this directory on the SD card:
 
@@ -43,13 +39,11 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
 
 ## Display
 
-- Top screen: selectable Wide, Original, and Stretch aspect ratios.
-- Display styles, in menu order: linearly filtered Blur, 2x sharp Bilinear,
-  and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
-  start with Bilinear and Stretch; valid saved choices are restored on later
-  launches.
+- Top-screen aspect ratios are Wide (「宽屏」), Wide + AI (「宽屏+AI」), and Original (「原始」). Existing Stretch preferences load as Wide.
+- Display styles are Blur, Bilinear, and Pixel Perfect (「点对点」). Fresh installations start with Wide and Bilinear. Both Wide aspect ratios enter 400×240 Full View with Pixel Perfect. Wide + AI also adds generated margins to supported scenes.
+- The 3DS slider controls stereoscopic depth. The 「3D景深」 setting enables additional depth for scenery and characters.
 - Bottom screen: 320x240 map, dungeon/status information and touch item UI.
-- Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
+- Rendering: PICA200 GPU renderer with a software GBA PPU fallback.
 - Performance profile: selected automatically from the detected console model.
 - New 3DS: requests 804 MHz, L2 cache and access to the extra application core.
 - New 3DS turbo: hold the C-stick in any direction and select 2x through 5x
@@ -78,9 +72,7 @@ Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
   data.
 - System lifecycle: HOME, sleep and application close events are handled by the
   regular 3DS applet loop.
-- Console: the development boot console remains visible during startup. Once
-  gameplay begins, later stdout/stderr logs are detached from the bottom
-  framebuffer so they cannot flicker over the map or touch interface.
+- Startup: the top screen shows the game logo and the bottom screen shows a rotating gold Triforce during loading.
 
 The CIA metadata uses a stable title ID and requests SD card access for local
 ROM and save data.
@@ -108,9 +100,7 @@ TMC3DS_REGION=JP TMC3DS_BUILD_TYPE=Debug platform/3ds/build.sh
 ```
 
 Run the asset processor with clean `baserom_jp.gba` in the repository root.
-It generates `build/JP/assets/map_offsets.h` and `gfx_offsets.h`; these local
-ROM-derived files are not committed. Debug builds use `-Og -g3`, retain frame
-pointers, disable LTO, and write `tmc-3ds.map` beside the ELF.
+It generates `build/JP/assets/map_offsets.h` and `gfx_offsets.h`. The repository includes these JP offset headers for CIA builds. The linker writes `tmc-3ds.map` beside the ELF.
 
 The region-baseline packages are written under `build-3ds/game/`. No ROM,
 extracted asset package or save data is included in either package.

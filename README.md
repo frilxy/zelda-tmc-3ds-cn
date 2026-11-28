@@ -2,7 +2,7 @@
 
 <img width="1672" height="941" alt="The Minish Cap 3DS" src="https://github.com/user-attachments/assets/db99e777-12a2-4222-86c3-7c8f14062586" />
 
-Nintendo 3DS dual-screen port of *The Legend of Zelda: The Minish Cap*, based on the open-source Minish Cap decompilation, Project Picori, and the dual-screen Android port.
+Simplified Chinese edition of the native Nintendo 3DS dual-screen port of *The Legend of Zelda: The Minish Cap*. The public CIA builds use the Japanese baseline and support the original Japanese ROM and Angel Team SP4.
 
 Made with the help of Codex.
 
@@ -23,10 +23,11 @@ https://discord.gg/SMW49UMkw
 ## Features
 
 * Native Nintendo 3DS port with full dual-screen support.
-* Supports USA, European, clean Japanese, and Angel Team Chinese SP4 ROM profiles with automatic detection.
-* Includes native [European gameplay backports](docs/eu-backport.md); no patched ROM is required.
-* Top-screen aspect modes: Wide, Wide + AI and Original. Both Wide modes use the 400×240 Full View with Pixel Perfect (`点对点`).
-* Wide + AI displays generated margins from [tinaut1986 v0.4.7](https://github.com/tinaut1986/zelda-tmc-3ds/tree/v0.4.7) in supported scenes.
+* Chinese touchscreen menus, maps, settings and item controls. Angel Team SP4 supplies the Chinese game text.
+* Japanese and SP4 ROM profiles are detected at startup and use separate save files.
+* Under 「设置 → 屏幕」, select 「宽屏」 and 「点对点」 for 400×240 Full View. Select 「宽屏+AI」 with 「点对点」 for generated margins in supported scenes. 「原始」 uses the original aspect ratio. Existing Stretch preferences load as Wide.
+* The 3D slider controls stereoscopic output. Toggle 「3D景深」 to add depth to gameplay scenery and characters.
+* Wide cutscenes continue scripted walks to visible destinations or beyond the edge of the expanded view.
 * Bottom-screen interface with live map, dungeon information, quest status, touch item controls, and settings.
   The opening Picori legend keeps the bottom screen black; the overworld map
   shows only its stone frame until Link receives it.
@@ -48,11 +49,7 @@ The bottom-screen worker avoids redundant static redraws while keeping touch inp
 
 ## Installation
 
-1. Install the CIA with FBI.
-
-```text
-tmc-3ds-v2.1.cia
-```
+1. Install the JP CIA with FBI. The releases page lists the stable and prerelease builds and links to their installation QR codes. [Releases](https://github.com/frilxy/zelda-tmc-3ds-cn/releases)
 
 2. Create this folder on your SD card:
 
@@ -60,34 +57,14 @@ tmc-3ds-v2.1.cia
 sdmc:/3ds/The Minish Cap 3DS/
 ```
 
-3. Place your legally obtained supported `.gba` ROM inside that folder.
+3. Place a supported `.gba` ROM in that folder. Use Angel Team SP4 for Chinese game text.
 
-The ROM can have **any filename** as long as it uses the `.gba` extension.
+| ROM | SHA-1 |
+|---|---|
+| Original Japanese | `6c5404a1effb17f481f352181d0f1c61a2765c5d` |
+| Angel Team SP4 | `ba04cfbe93d12d2ad684c52234472fa12a5b53d7` |
 
-### Recommended ROM
-
-USA, European, and clean Japanese retail ROMs are supported. The exact Angel Team
-Chinese SP4 patch listed below is also supported; other `BZMJ` patches are rejected
-instead of being run with potentially incompatible offsets or text codecs.
-
-For the original upstream experience, the **European ROM** remains the most tested profile.
-
-The European version is the ROM I used throughout the development and testing of this port, so it has received by far the most testing.
-
-The USA version should be compatible, but it behaves slightly differently in some parts of the game, so you may encounter bugs that are not present when using the European version.
-
-The European ROM also includes multiple languages, **including English**, so there is generally no disadvantage to using it.
-
-Supported ROM SHA-1 values:
-
-```text
-USA:       b4bd50e4131b027c334547b4524e2dbbd4227130
-Europe:    cff199b36ff173fb6faf152653d1bccf87c26fb7
-Japan:     6c5404a1effb17f481f352181d0f1c61a2765c5d
-Angel SP4: ba04cfbe93d12d2ad684c52234472fa12a5b53d7
-```
-
-Clean JP and Angel SP4 use separate save files, save-state files, and extracted asset caches.
+The launcher accepts any `.gba` filename and matches the ROM by hash. See the platform guide for USA and European ROM builds. [3DS platform guide](platform/3ds/README.md)
 
 The ROM stays on your SD card and is never included in the CIA.
 
@@ -147,9 +124,9 @@ Wi-Fi is required; connection failures leave the current installation available.
 
 Every GitHub release includes:
 
-* Installable CIA
+* Installable JP CIA
 * FBI QR code
-* Source code archive
+* SHA-256 checksum and source code archive
 
 Latest release:
 
@@ -171,7 +148,7 @@ Build with:
 
 ```sh
 chmod +x platform/3ds/build.sh
-./platform/3ds/build.sh
+TMC3DS_REGION=JP ./platform/3ds/build.sh
 ```
 
 The installable CIA is generated at
@@ -188,7 +165,8 @@ The build does not include or embed a ROM.
 * [Project Picori](https://github.com/999sian/tmc) — native Minish Cap engine and port infrastructure
 * [Raekwon1603/tmc-android](https://github.com/Raekwon1603/tmc-android) — Android packaging and platform work behind the dual-screen fork
 * [zeldaret/tmc](https://github.com/zeldaret/tmc) — original decompilation
-* Esteban PDN — Nintendo 3DS port and release maintenance
+* EstebanPdN developed the upstream Nintendo 3DS port. [Upstream repository](https://github.com/EstebanPdN/zelda-tmc-3ds)
+* tinaut1986 contributed Full View, stereoscopic 3D, GPU improvements, AI scene extensions and gameplay fixes. [Fork v0.4.7](https://github.com/tinaut1986/zelda-tmc-3ds/tree/v0.4.7)
 
 ## License and Legal Notice
 
