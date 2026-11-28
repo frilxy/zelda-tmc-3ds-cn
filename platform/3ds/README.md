@@ -1,116 +1,44 @@
-# The Minish Cap 3DS Platform
+# 3DS 平台说明
 
-This target builds the native dual-screen Nintendo 3DS frontend.
+本文以 GitHub 正式发行版的源码和安装包为准。功能和移植来源见项目首页。 [项目首页](../../README.md) · [下载正式版](https://github.com/frilxy/zelda-tmc-3ds-cn/releases/latest)
 
-Outside gameplay, the bottom screen shows a procedural gold-framed Triforce;
-touching it opens the existing Minish Cap Settings hierarchy.
+## 安装和区域基线
 
-## Console Installation
+**中文剧情需要准确匹配的 Angel Team SP4 汉化 ROM。** 请先用 FBI 安装 JP CIA，再把自行合法取得的 SP4 `.gba` 文件放进 SD 卡的 `sdmc:/3ds/The Minish Cap 3DS/`。文件名可自定，扩展名须为 `.gba`。CIA 读取 SD 卡上的 ROM，发行包仅提供移植程序。
 
-Install the CIA built for your ROM family:
+启动时程序会通过 ROM 哈希选择对应的数据和文本配置。公开发行的 CIA 使用 JP 基线。自行构建时可按 ROM 的区域选择基线。
 
-```text
-tmc-3ds-v1.3-E3.cia
-```
+| ROM | 可用构建基线 | SHA-1 |
+|---|---|---|
+| Angel Team SP4 汉化版 | JP | `ba04cfbe93d12d2ad684c52234472fa12a5b53d7` |
+| 日版原版 | JP | `6c5404a1effb17f481f352181d0f1c61a2765c5d` |
+| 美版原版 | USA 或 EU | `b4bd50e4131b027c334547b4524e2dbbd4227130` |
+| 欧版原版 | USA 或 EU | `cff199b36ff173fb6faf152653d1bccf87c26fb7` |
 
-Then create this directory on the SD card:
+日版原版和 SP4 汉化版各有独立存档。启动提示会拒绝未知修改版或与当前构建基线不匹配的 ROM。
 
-```text
-sdmc:/3ds/The Minish Cap 3DS/
-```
+## 屏幕和性能
 
-Place a legally obtained supported ROM there. Any `.gba` filename is accepted.
-The port verifies the complete ROM hash and activates the matching data/text
-profile before boot. The default USA-baseline package accepts the original USA
-and Europe ROMs. A `TMC3DS_REGION=JP` package accepts clean Japan and Angel SP4;
-the launcher rejects cross-family ROM/build combinations instead of starting a
-known hybrid configuration. Expected SHA-1 values:
+- 上屏宽高比可选「宽屏」「宽屏+AI」「原始」。显示方式可选「模糊」「双线性」「点对点」。首次安装默认采用「宽屏」和「双线性」。旧版「拉伸」会自动读取为「宽屏」。
+- 「宽屏」或「宽屏+AI」配合「点对点」，在对应场景使用 400×240 Full View。在「宽屏+AI」下，部分场景还会显示 AI 补景。
+- 支持立体显示的主机可用 3D 滑杆调节立体效果。「3D景深」额外控制游戏场景和角色的景深。
+- 下屏为 320×240，提供地图、地牢信息、状态栏与触屏道具操作。加载时下屏显示旋转的金色三角力量。
+- 渲染使用 PICA200 GPU，部分画面会回退到软件 GBA PPU。New 3DS 启用 804 MHz、L2 缓存与额外应用核心，并支持 C-Stick 触发 2～5 倍速。旧机使用自适应跳帧，画面帧率可低于引擎的 60 Hz 目标，跳过画面时仍处理输入、音频和触屏。
 
-```text
-USA:       b4bd50e4131b027c334547b4524e2dbbd4227130
-Europe:    cff199b36ff173fb6faf152653d1bccf87c26fb7
-Japan:     6c5404a1effb17f481f352181d0f1c61a2765c5d
-Angel SP4: ba04cfbe93d12d2ad684c52234472fa12a5b53d7
-```
+如无声音，可在 Luma3DS 的 Rosalina 菜单中选择 `Miscellaneous options → Dump DSP firmware`。
 
-Only that exact Angel Team Chinese SP4 revision is enabled. Unknown Japanese
-patches fail closed and the startup console prints their SHA-256.
+## 诊断
 
-The ROM is read locally from the SD card and is never copied into the CIA.
+游戏仍有响应时按 `L + R + A`，程序会写入截图、运行状态、内存和性能数据。目录为 `sdmc:/3ds/The Minish Cap 3DS/dumps/`。如果本次诊断包含可恢复的检查点，可在「设置 → 开发者选项」中选择加载状态。
 
-Audio requires a working 3DS DSP firmware setup. On Luma3DS, use Rosalina's
-`Dump DSP firmware` option if homebrew audio is unavailable.
+报告问题时请注明 CIA 版本、主机型号、ROM 类型及复现步骤。提交前可按需检查诊断文件，选择与问题有关的资料。 [提交问题](https://github.com/frilxy/zelda-tmc-3ds-cn/issues)
 
-## Display
+## 构建
 
-- Top screen: selectable Wide, Original, and Stretch aspect ratios.
-- Display styles, in menu order: linearly filtered Blur, 2x sharp Bilinear,
-  and centered one-pixel-per-source-pixel Pixel Perfect. Fresh installations
-  start with Bilinear and Stretch; valid saved choices are restored on later
-  launches.
-- Bottom screen: 320x240 map, dungeon/status information and touch item UI.
-- Rendering: PICA200/Citro2D presenter fed by the software GBA PPU.
-- Performance profile: selected automatically from the detected console model.
-- New 3DS: requests 804 MHz, L2 cache and access to the extra application core.
-- New 3DS turbo: hold the C-stick in any direction and select 2x through 5x
-  game speed from the Gameplay settings.
-- Old 3DS: experimental CPU-renderer and audio optimizations plus adaptive
-  presentation skipping target 60 Hz engine timing when visual rendering falls
-  behind. Input, touch, audio and lifecycle processing continue on skipped
-  presentation ticks; visual FPS may be lower.
-- Bottom-screen scheduling: touch state is sampled on every engine tick;
-  interactive hitboxes are promoted with the physically visible buffer, and
-  unchanged static pages avoid redundant paint/upload work.
-- Settings: Minish Cap-themed Screen, Gameplay, Developer, and Randomizer submenus with
-  persistent options, a manual memory-dump command, and a live diagnostics
-  overlay.
-- Randomizer: persistent Project Picori randomizer mode in its own submenu. Mode
-  changes require confirmation, clear only the active profile and related
-  state, keep the ROM, and restart with isolated normal/randomized saves.
-- Show FPS: measured presentation cadence in a compact lower-left top-screen
-  box.
-- Diagnostics: press `L + R + A` to pause the game, display `DUMP SAVED`, and
-  create `dumps/dump-*` with top and bottom physical-framebuffer BMP and raw
-  captures, EWRAM, IWRAM, VRAM, palettes, OAM, I/O and game state, frame
-  visual and engine cadence, adaptive-skip data, per-core PPU timings, GPU
-  work, audio buffer health, save
-  persistence state, memory availability, lifecycle state and complete input
-  data.
-- System lifecycle: HOME, sleep and application close events are handled by the
-  regular 3DS applet loop.
-- Console: the development boot console remains visible during startup. Once
-  gameplay begins, later stdout/stderr logs are detached from the bottom
-  framebuffer so they cannot flicker over the map or touch interface.
-
-The CIA metadata uses a stable title ID and requests SD card access for local
-ROM and save data.
-
-## Requirements
-
-- devkitPro with devkitARM, libctru, Citro2D and Citro3D
-- CMake with the devkitPro Nintendo 3DS toolchain
-- `makerom` and `bannertool` for CIA packaging
-
-Run:
+从所需的正式版本标签检出源码，与 GitHub 上的安装包对应。需要 devkitPro、devkitARM、libctru、Citro2D、Citro3D、3DS zlib、CMake，以及用于打包的 `makerom` 和 `bannertool`。在仓库根目录执行以下命令生成 JP CIA。
 
 ```sh
-chmod +x platform/3ds/build.sh
-platform/3ds/build.sh
+TMC3DS_REGION=JP ./platform/3ds/build.sh
 ```
 
-For the JP/SP4 compile-time baseline and a symbol-friendly debug build:
-
-```sh
-xmake f -y --game_version=JP
-xmake build -y asset_processor
-tools/bin/asset_processor extract JP build/JP/assets
-TMC3DS_REGION=JP TMC3DS_BUILD_TYPE=Debug platform/3ds/build.sh
-```
-
-Run the asset processor with clean `baserom_jp.gba` in the repository root.
-It generates `build/JP/assets/map_offsets.h` and `gfx_offsets.h`; these local
-ROM-derived files are not committed. Debug builds use `-Og -g3`, retain frame
-pointers, disable LTO, and write `tmc-3ds.map` beside the ELF.
-
-The region-baseline packages are written under `build-3ds/game/`. No ROM,
-extracted asset package or save data is included in either package.
+安装包输出到 `build-3ds/game/tmc-3ds-v<版本>.cia`。源码已包含 JP 构建所需的资源偏移表。构建阶段无需提供 ROM，运行阶段请自行将受支持的 ROM 放入 SD 卡。
